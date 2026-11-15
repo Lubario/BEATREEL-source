@@ -467,10 +467,13 @@ struct Frame
         return p;
     }
 
+    /** Rising zero crossing at or before `centre`. Always returns an index inside [0, total). */
     int64 triggerStart (const float* src, int64 total, int64 centre, int searchLen)
     {
+        if (total <= 1) return 0;
+        centre = jlimit ((int64) 1, total - 1, centre);
         for (int64 i = centre; i > jmax ((int64) 1, centre - searchLen); --i)
-            if (i < total && src[i - 1] < 0.0f && src[i] >= 0.0f) return i;
+            if (src[i - 1] < 0.0f && src[i] >= 0.0f) return i;
         return centre;
     }
 
@@ -487,7 +490,7 @@ struct Frame
         for (int i = 0; i < len; ++i)
         {
             int64 si = start + i;
-            mono[(size_t) i] = si < total ? 0.5f * (L[si] + R[si]) : 0.0f;
+            mono[(size_t) i] = (si >= 0 && si < total) ? 0.5f * (L[si] + R[si]) : 0.0f;
             mx = jmax (mx, std::abs (mono[(size_t) i]));
         }
         g.setColour (st.dim.withAlpha (0.25f));
@@ -517,7 +520,7 @@ struct Frame
         const int64 total = (int64) d.bassSignal.size();
         const int64 start = triggerStart (d.bassSignal.data(), total, d.sampleIndex (t) - len, (int) (0.03 * sr));
         float mx = 0.02f;
-        for (int64 i = start; i < jmin (total, start + len); ++i) mx = jmax (mx, std::abs (d.bassSignal[(size_t) i]));
+        for (int64 i = jmax ((int64) 0, start); i < jmin (total, start + len); ++i) mx = jmax (mx, std::abs (d.bassSignal[(size_t) i]));
         g.setColour (st.accent.withAlpha (0.25f));
         g.strokePath (signalPath (r, d.bassSignal.data(), total, start, len, 0.9f / mx), PathStrokeType (8 * s));
         g.setColour (st.accent);

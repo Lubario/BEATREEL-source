@@ -54,6 +54,33 @@ int main (int argc, char* argv[])
     if (opt ("--fps") == "60") st.fps = 60;
     st.lossless = a.contains ("--lossless");
 
+    if (a[1] == "--sweep")
+    {
+        // stress test: every card, every look, every aspect, many times incl. the exact start and end
+        const int n = jmax (2, a[2].getIntValue());
+        int frames = 0;
+        for (int look = 0; look < kNumLooks; ++look)
+            for (int asp = 0; asp < kNumAspects; ++asp)
+            {
+                Style sw = makeLook (look);
+                sw.cards = (1u << kNumCards) - 1;
+                sw.aspect = asp;
+                auto size = aspectSize (asp) / 4;
+                Image img (Image::ARGB, size.x, size.y, true, SoftwareImageType());
+                for (int i = 0; i < n; ++i)
+                {
+                    const double times[] = { 0.0, 1e-4, 0.01, 0.03, data->duration - 0.01, data->duration, data->duration + 1.0, -1.0 };
+                    const double tt = i < 8 ? times[i] : data->duration * (i - 8) / (n - 8);
+                    Graphics g (img);
+                    RenderContext rc; rc.data = data.get(); rc.midi = (i % 2) ? midi.get() : nullptr; rc.style = &sw; rc.t = tt;
+                    renderFrame (g, size.x, size.y, rc);
+                    ++frames;
+                }
+            }
+        std::cout << "sweep ok: " << frames << " frames\n";
+        return 0;
+    }
+
     if (a[1] == "--still")
     {
         auto size = aspectSize (st.aspect);
