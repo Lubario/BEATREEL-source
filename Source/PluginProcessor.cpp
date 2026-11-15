@@ -202,7 +202,13 @@ void BeatReelProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
     }
 
     // preview playback while the DAW is stopped
-    if (! playing && previewPlaying.load() && state != recRecording)
+    bool holding = false;
+    if (auto hold = previewHold.load(); hold > 0 && ! playing)
+    {
+        previewHold = jmax ((int64) 0, hold - n);
+        holding = true;
+    }
+    if (! playing && previewPlaying.load() && state != recRecording && ! holding)
     {
         const SpinLock::ScopedTryLockType tl (previewLock);
         if (tl.isLocked() && previewData != nullptr && previewData->audio.getNumSamples() > 0)

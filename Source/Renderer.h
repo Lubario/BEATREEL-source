@@ -11,9 +11,23 @@ namespace brl
         const MidiData*     midi  = nullptr;   // optional
         const Style*        style = nullptr;   // required
         const Image*        backgroundImage = nullptr;
-        double t = 0.0;                        // seconds into the capture
+        double t = 0.0;                        // seconds into the VIDEO (the intro may come before the beat)
         bool   watermark = false;              // "DEMO" overlay for unactivated exports
     };
+
+    /** Effective intro timing for a style + capture (snapping applied). */
+    struct IntroTiming
+    {
+        double length = 0, transition = 0;
+        bool   preroll = false;            // intro plays before the beat (silent lead-in)
+        bool   active = false;
+        double end() const          { return active ? length + transition : 0.0; }
+        double audioOffset() const  { return active && preroll ? length : 0.0; }   // video time where the beat starts
+    };
+    IntroTiming introTiming (const Style& s, const AnalysisData& d);
+
+    /** Length of the exported video, including a lead-in intro. */
+    double videoDuration (const Style& s, const AnalysisData& d);
 
     /** Draws one video frame into a w x h canvas at the graphics origin. Thread-safe (no shared mutable state). */
     void renderFrame (Graphics& g, int w, int h, const RenderContext& rc);

@@ -98,7 +98,8 @@ bool Exporter::runJob (const ExportJob& job, std::function<bool (float, const St
 
     const auto size = aspectSize (job.style.aspect);
     const int w = size.x, h = size.y, fps = job.style.fps;
-    const int frames = (int) std::ceil (job.data->duration * fps);
+    const auto intro = introTiming (job.style, *job.data);
+    const int frames = (int) std::ceil (videoDuration (job.style, *job.data) * fps);
 
     auto tmp = File::getSpecialLocation (File::tempDirectory).getChildFile ("beatreel_" + String::toHexString (Random::getSystemRandom().nextInt64()));
     tmp.createDirectory();
@@ -106,12 +107,24 @@ bool Exporter::runJob (const ExportJob& job, std::function<bool (float, const St
 
     // 1) the captured audio, untouched, as 32-bit float WAV
     auto wav = tmp.getChildFile ("audio.wav");
-    if (! cb (0.0f, "Writing audio") || ! writeFloatWav (wav, job.data->audio, job.data->info.sampleRate))
+    bool audioOk = cb (0.0f, "Writing audio");
+    if (audioOk)
     {
-        error = "Couldn't write the audio"; return false;
+        const double sr = job.data->info.sampleRate;
+        const int lead = (int) std::llround (intro.audioOffset() * sr);   // silent lead-in under a "before the beat" intro
+        if (lead == 0) audioOk = writeFloatWav (wav, job.data->audio, sr);
+        else
+        {
+            const auto& a = job.data->audio;
+            AudioBuffer<float> padded (a.getNumChannels(), a.getNumSamples() + lead);
+            padded.clear();
+            for (int c = 0; c < a.getNumChannels(); ++c) padded.copyFrom (c, lead, a, c, 0, a.getNumSamples());
+            audioOk = writeFloatWav (wav, padded, sr);
+        }
     }
+    if (! audioOk) { error = "Couldn't write the audio"; return false; }
     if (job.alsoSaveWav)
-        wav.copyFileTo (job.output.withFileExtension ("wav"));
+        writeFloatWav (job.output.withFileExtension ("wav"), job.data->audio, job.data->info.sampleRate);
 
     Image bg;
     if (job.style.background == bgImage && job.style.bgImagePath.isNotEmpty())

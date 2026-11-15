@@ -36,6 +36,13 @@ namespace brl
 
         BeatReelProcessor& proc;
         void styleChanged();                      // call after editing proc.style
+
+        // intro preview: plays the intro (and the start of the beat) from the top
+        void startIntroPreview();
+        void stopIntroPreview()                   { introPreview = false; }
+        bool isIntroPreviewing() const            { return introPreview; }
+        double getIntroPreviewTime() const        { return introPreview ? introT : -1.0; }
+        bool introLoop = false;
         void showMessage (const String& title, const String& msg);
 
     private:
@@ -51,8 +58,8 @@ namespace brl
         class Preview;       std::unique_ptr<Preview> preview;
         TextButton randomBtn { "RANDOMIZE" }, presetsBtn { "PRESETS" }, importBtn { "IMPORT AUDIO" },
                    midiBtn { "LOAD .MID" }, exportBtn { "EXPORT" }, activateBtn { "ACTIVATE" };
-        TextButton tabs[4];
-        std::unique_ptr<Component> pages[4];
+        TextButton tabs[5];
+        std::unique_ptr<Component> pages[5];
         Viewport pageView;
         int currentPage = 0;
         TextButton playBtn { "PAUSE" }, aspectBtns[kNumAspects];
@@ -61,6 +68,8 @@ namespace brl
         std::unique_ptr<FileChooser> chooser;
         int seenStyleVersion = -1;
         bool exportWasBusy = false;
+        bool introPreview = false;
+        double introStartMs = 0, introT = 0;
         String lastShownError;
         Random rng;
 

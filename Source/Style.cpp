@@ -37,6 +37,23 @@ const char* patternName (int p)
     return n[jlimit (0, (int) kNumPatterns - 1, p)];
 }
 
+const char* introName (int i)
+{
+    static const char* n[] = { "NONE", "SLAM", "TYPEWRITER", "GLITCH", "COUNTDOWN", "CARD DEAL", "IRIS" };
+    return n[jlimit (0, (int) kNumIntros - 1, i)];
+}
+const char* introDescription (int i)
+{
+    static const char* n[] = { "Straight into the reel",
+                               "Title slams in with a flash and screen shake",
+                               "Title types itself out, terminal style",
+                               "The reel glitches in under a flickering title",
+                               "3 - 2 - 1 countdown, then the title pops",
+                               "Every card flies in and lands, one by one",
+                               "Title card, then an iris opens onto the reel" };
+    return n[jlimit (0, (int) kNumIntros - 1, i)];
+}
+
 //==============================================================================
 namespace
 {
@@ -163,6 +180,9 @@ var Style::toVar() const
     o->setProperty ("footerText", footerText);
     o->setProperty ("aspect", aspect); o->setProperty ("fps", fps);
     o->setProperty ("midiAlign", midiAlign); o->setProperty ("lossless", lossless);
+    o->setProperty ("intro", intro); o->setProperty ("introLength", introLength);
+    o->setProperty ("introTransition", introTransition); o->setProperty ("introMode", introMode);
+    o->setProperty ("introSnap", introSnap);
     return var (o);
 }
 
@@ -190,6 +210,11 @@ void Style::fromVar (const var& v)
     aspect = jlimit (0, (int) kNumAspects - 1, (int) get ("aspect", aspect));
     fps = get ("fps", fps) == var (60) ? 60 : 30;
     midiAlign = get ("midiAlign", midiAlign); lossless = get ("lossless", lossless);
+    intro = jlimit (0, (int) kNumIntros - 1, (int) get ("intro", intro));
+    introLength = jlimit (0.25f, 8.0f, (float) get ("introLength", introLength));
+    introTransition = jlimit (0.0f, 2.0f, (float) get ("introTransition", introTransition));
+    introMode = jlimit (0, 1, (int) get ("introMode", introMode));
+    introSnap = get ("introSnap", introSnap);
 }
 
 //==============================================================================

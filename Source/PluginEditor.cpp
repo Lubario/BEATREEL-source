@@ -520,6 +520,251 @@ namespace
         String capText, midiText, ffmpegText;
         std::unique_ptr<FileChooser> chooser;
     };
+    //--------------------------------------------------------------------------
+    struct IntroPage : public Page, private Timer
+    {
+        /** Timeline: drag the two handles to set the intro length and its hand-over to the reel. */
+        struct Timeline : public Component
+        {
+            explicit Timeline (IntroPage& p) : page (p) {}
+            static constexpr double span = 10.0;   // seconds shown
+
+            float xOf (double sec) const { return 10.0f + (float) (sec / span) * (getWidth() - 20.0f); }
+            double secAt (float x) const { return jlimit (0.0, span, (double) (x - 10.0f) / (getWidth() - 20.0f) * span); }
+
+            void paint (Graphics& g) override
+            {
+                auto& st = page.st();
+                auto d = page.ed.proc.getData();
+                auto r = getLocalBounds().toFloat();
+                auto track = r.withTrimmedTop (18).withTrimmedBottom (16).reduced (10, 0);
+                g.setColour (UiLookAndFeel::line());
+                g.fillRoundedRectangle (track, 4);
+
+                // beat ticks + second labels
+                if (d != nullptr)
+                {
+                    const double spb = d->secondsPerBeat();
+                    for (double b = 0; b <= span; b += spb)
+                    {
+                        const bool bar = std::abs (std::fmod (b / spb, (double) d->info.beatsPerBar)) < 1e-6;
+                        g.setColour (UiLookAndFeel::dim().withAlpha (bar ? 0.6f : 0.25f));
+                        g.fillRect (xOf (b), track.getY(), 1.0f, track.getHeight());
+                    }
+                }
+                g.setFont (UiLookAndFeel::ui (12));
+                g.setColour (UiLookAndFeel::dim());
+                for (int sec = 0; sec <= (int) span; sec += 2)
+                    g.drawText (String (sec) + "s", Rectangle<float> (xOf (sec) - 15, r.getBottom() - 15, 30, 14), Justification::centred, false);
+
+                if (d == nullptr || st.intro == introNone)
+                {
+                    g.setColour (UiLookAndFeel::dim());
+                    g.drawText ("PICK AN INTRO ABOVE", track, Justification::centred, false);
+                    return;
+                }
+                const auto it = introTiming (st, *d);
+                auto introR = Rectangle<float> (xOf (0), track.getY(), xOf (it.length) - xOf (0), track.getHeight());
+                auto fadeR  = Rectangle<float> (xOf (it.length), track.getY(), xOf (it.end()) - xOf (it.length), track.getHeight());
+                g.setColour (UiLookAndFeel::accent());
+                g.fillRoundedRectangle (introR, 4);
+                g.setColour (UiLookAndFeel::accent2().withAlpha (0.55f));
+                g.fillRect (fadeR);
+                g.setColour (Colours::black);
+                g.setFont (UiLookAndFeel::ui (13));
+                if (introR.getWidth() > 40) g.drawText ("INTRO", introR, Justification::centred, false);
+
+                // where the beat starts
+                const float bx = xOf (it.audioOffset());
+                g.setColour (UiLookAndFeel::text());
+                g.drawText (it.preroll ? "BEAT STARTS" : "BEAT FROM 0:00", Rectangle<float> (bx - 2, 0, 120, 16), Justification::centredLeft, false);
+                g.fillRect (bx, 14.0f, 2.0f, track.getBottom() - 14.0f);
+
+                // handles
+                for (double hs : { it.length, it.end() })
+                {
+                    const float hx = xOf (hs);
+                    g.setColour (UiLookAndFeel::text());
+                    g.fillRoundedRectangle (hx - 4, track.getY() - 3, 8, track.getHeight() + 6, 3);
+                }
+                // playhead while previewing
+                const double T = page.ed.getIntroPreviewTime();
+                if (T >= 0)
+                {
+                    g.setColour (Colours::white);
+                    g.fillRect (xOf (T) - 1, track.getY() - 6, 2.0f, track.getHeight() + 12);
+                }
+            }
+
+            void mouseDown (const MouseEvent& e) override
+            {
+                auto d = page.ed.proc.getData();
+                if (d == nullptr || page.st().intro == introNone) { dragging = 0; return; }
+                const auto it = introTiming (page.st(), *d);
+                const float a = std::abs (e.position.x - xOf (it.length)), b = std::abs (e.position.x - xOf (it.end()));
+                dragging = b < a && b < 14 ? 2 : (a < 14 || b >= 14 ? 1 : 2);
+                mouseDrag (e);
+            }
+            void mouseDrag (const MouseEvent& e) override
+            {
+                auto d = page.ed.proc.getData();
+                if (dragging == 0 || d == nullptr) return;
+                auto& st = page.st();
+                const double sec = secAt (e.position.x);
+                if (dragging == 1)
+                {
+                    const double fade = st.introTransition;
+                    st.introLength = (float) jlimit (0.25, 8.0, sec);
+                    st.introTransition = (float) fade;
+                }
+                else
+                {
+                    const auto it = introTiming (st, *d);
+                    st.introTransition = (float) jlimit (0.0, 2.0, sec - it.length);
+                }
+                page.ed.styleChanged();
+                repaint();
+            }
+            void mouseUp (const MouseEvent&) override { dragging = 0; page.ed.startIntroPreview(); }
+
+            IntroPage& page;
+            int dragging = 0;
+        };
+
+        struct Tile : public Component
+        {
+            Tile (IntroPage& p, int i) : page (p), index (i) {}
+            void paint (Graphics& g) override
+            {
+                auto r = getLocalBounds().toFloat().reduced (2);
+                const bool sel = page.st().intro == index;
+                g.setColour (sel ? UiLookAndFeel::accent() : (isMouseOver() ? UiLookAndFeel::line().brighter (0.15f) : UiLookAndFeel::panel()));
+                g.fillRoundedRectangle (r, 5);
+                g.setColour (sel ? UiLookAndFeel::accent() : UiLookAndFeel::line());
+                g.drawRoundedRectangle (r, 5, 1);
+                auto tr = r.reduced (10, 6);
+                g.setColour (sel ? Colours::black : UiLookAndFeel::text());
+                g.setFont (UiLookAndFeel::ui (18, true));
+                g.drawText (introName (index), tr.removeFromTop (22), Justification::centredLeft, false);
+                g.setColour (sel ? Colours::black.withAlpha (0.75f) : UiLookAndFeel::dim());
+                g.setFont (UiLookAndFeel::ui (13));
+                g.drawFittedText (introDescription (index), tr.toNearestInt(), Justification::topLeft, 2);
+            }
+            void mouseEnter (const MouseEvent&) override { repaint(); }
+            void mouseExit (const MouseEvent&) override  { repaint(); }
+            void mouseUp (const MouseEvent& e) override
+            {
+                if (! e.mouseWasClicked()) return;
+                page.st().intro = index;
+                page.ed.styleChanged();
+                if (index != introNone) page.ed.startIntroPreview(); else page.ed.stopIntroPreview();
+                page.refresh();
+            }
+            IntroPage& page; int index;
+        };
+
+        explicit IntroPage (BeatReelEditor& e) : Page (e), timeline (*this)
+        {
+            for (int i = 0; i < kNumIntros; ++i) addAndMakeVisible (tiles.add (new Tile (*this, i)));
+            addAndMakeVisible (previewBtn);
+            previewBtn.setColour (TextButton::buttonColourId, UiLookAndFeel::accent());
+            previewBtn.setColour (TextButton::textColourOffId, Colours::black);
+            previewBtn.onClick = [this] { if (ed.isIntroPreviewing()) ed.stopIntroPreview(); else ed.startIntroPreview(); };
+            addAndMakeVisible (loop);
+            loop.onClick = [this] { ed.introLoop = loop.getToggleState(); if (ed.introLoop) ed.startIntroPreview(); };
+            addAndMakeVisible (timeline);
+
+            auto slider = [this] (Slider& sl, double lo, double hi, float Style::* m)
+            {
+                addAndMakeVisible (sl);
+                sl.setRange (lo, hi, 0.05);
+                sl.setTextBoxStyle (Slider::TextBoxRight, false, 64, 24);
+                sl.setTextValueSuffix (" s");
+                sl.onValueChange = [this, &sl, m] { st().*m = (float) sl.getValue(); ed.styleChanged(); timeline.repaint(); };
+                sl.onDragEnd = [this] { ed.startIntroPreview(); };
+            };
+            slider (length, 0.25, 8.0, &Style::introLength);
+            slider (fade, 0.0, 2.0, &Style::introTransition);
+            addAndMakeVisible (snap);
+            snap.onClick = [this] { st().introSnap = snap.getToggleState(); ed.styleChanged(); refresh(); };
+            mode.addItemList ({ "Plays over the start of the beat", "Plays before the beat (silent lead-in)" }, 1);
+            mode.onChange = [this] { st().introMode = mode.getSelectedItemIndex(); ed.styleChanged(); refresh(); ed.startIntroPreview(); };
+            addAndMakeVisible (mode);
+            startTimerHz (30);
+        }
+
+        void timerCallback() override
+        {
+            timeline.repaint();
+            previewBtn.setButtonText (ed.isIntroPreviewing() ? "STOP PREVIEW" : String::fromUTF8 ("\xe2\x96\xb6  PREVIEW INTRO"));
+        }
+
+        void refresh() override
+        {
+            for (auto* t : tiles) t->repaint();
+            length.setValue (st().introLength, dontSendNotification);
+            fade.setValue (st().introTransition, dontSendNotification);
+            snap.setToggleState (st().introSnap, dontSendNotification);
+            loop.setToggleState (ed.introLoop, dontSendNotification);
+            mode.setSelectedItemIndex (st().introMode, dontSendNotification);
+            const bool on = st().intro != introNone;
+            for (Component* c : { (Component*) &length, (Component*) &fade, (Component*) &snap, (Component*) &mode, (Component*) &previewBtn, (Component*) &loop })
+                c->setEnabled (on);
+            info = {};
+            if (auto d = ed.proc.getData(); d != nullptr && on)
+            {
+                const auto it = introTiming (st(), *d);
+                info << "Intro " << String (it.length, 2) << " s (" << String (it.length / d->secondsPerBeat(), 1) << " beats)"
+                     << "  +  " << String (it.transition, 2) << " s hand-over\n"
+                     << "Video length " << formatTime (videoDuration (st(), *d)) << "."
+                     << (it.preroll ? String (" Your beat starts after the intro.") : String (" Your beat plays from the first frame."));
+            }
+            timeline.repaint();
+            repaint();
+        }
+
+        int contentHeight() const override { return 30 + ((kNumIntros + 1) / 2) * 66 + 410; }
+
+        void paint (Graphics& g) override
+        {
+            heading (g, { 4, 0, getWidth(), 24 }, "INTRO - SHOWS AT THE START OF THE EXPORTED VIDEO");
+            for (auto& [y, t] : labels) heading (g, { 4, y - 20, getWidth(), 20 }, t);
+            g.setColour (UiLookAndFeel::text());
+            g.setFont (UiLookAndFeel::ui (14));
+            g.drawFittedText (info, 4, infoY, getWidth() - 8, 44, Justification::topLeft, 3);
+        }
+
+        void resized() override
+        {
+            labels.clear();
+            const int w = (getWidth() - 8) / 2;
+            int y = 30;
+            for (int i = 0; i < tiles.size(); ++i) tiles[i]->setBounds (4 + (i % 2) * w, y + (i / 2) * 66, w, 62);
+            y += ((kNumIntros + 1) / 2) * 66 + 8;
+            previewBtn.setBounds (4, y, getWidth() - 8, 34); y += 40;
+            loop.setBounds (4, y, getWidth() - 8, 26); y += 52;
+            labels.push_back ({ y, "TIMING - DRAG THE HANDLES" });
+            timeline.setBounds (0, y, getWidth(), 70); y += 96;
+            labels.push_back ({ y, "INTRO LENGTH" });
+            length.setBounds (4, y, getWidth() - 8, 26); y += 30;
+            snap.setBounds (4, y, getWidth() - 8, 26); y += 50;
+            labels.push_back ({ y, "HAND-OVER TO THE REEL" });
+            fade.setBounds (4, y, getWidth() - 8, 26); y += 50;
+            labels.push_back ({ y, "WHEN IT PLAYS" });
+            mode.setBounds (4, y, getWidth() - 8, 28); y += 38;
+            infoY = y;
+        }
+
+        OwnedArray<Tile> tiles;
+        Timeline timeline;
+        TextButton previewBtn;
+        ToggleButton loop { "Loop the preview while I tweak the timing" }, snap { "Snap to whole beats" };
+        Slider length, fade;
+        ComboBox mode;
+        String info;
+        std::vector<std::pair<int, String>> labels;
+        int infoY = 0;
+    };
 }
 
 //==============================================================================
@@ -691,8 +936,8 @@ BeatReelEditor::BeatReelEditor (BeatReelProcessor& p) : AudioProcessorEditor (p)
     activateBtn.onClick = [this] { showActivation(); };
     playBtn.onClick = [this] { proc.previewPlaying = ! proc.previewPlaying.load(); };
 
-    const char* tabNames[] = { "LOOKS", "CARDS", "STYLE", "INFO" };
-    for (int i = 0; i < 4; ++i)
+    const char* tabNames[] = { "LOOKS", "CARDS", "STYLE", "INTRO", "INFO" };
+    for (int i = 0; i < 5; ++i)
     {
         tabs[i].setButtonText (tabNames[i]);
         tabs[i].setClickingTogglesState (false);
@@ -702,7 +947,8 @@ BeatReelEditor::BeatReelEditor (BeatReelProcessor& p) : AudioProcessorEditor (p)
     pages[0] = std::make_unique<LooksPage> (*this);
     pages[1] = std::make_unique<CardsPage> (*this);
     pages[2] = std::make_unique<StylePage> (*this);
-    pages[3] = std::make_unique<InfoPage> (*this);
+    pages[3] = std::make_unique<IntroPage> (*this);
+    pages[4] = std::make_unique<InfoPage> (*this);
     pageView.setScrollBarsShown (true, false);
     pageView.setScrollBarThickness (8);
     addAndMakeVisible (pageView);
@@ -719,7 +965,11 @@ BeatReelEditor::BeatReelEditor (BeatReelProcessor& p) : AudioProcessorEditor (p)
     scrub.onValueChange = [this]
     {
         if (auto d = proc.getData(); d != nullptr && scrub.isMouseButtonDown())
+        {
+            introPreview = false;
+            proc.previewHold = 0;
             proc.previewPos = (int64) (scrub.getValue() * d->duration * d->info.sampleRate);
+        }
     };
     addAndMakeVisible (scrub);
     timeLabel.setJustificationType (Justification::centredRight);
@@ -741,7 +991,7 @@ BeatReelEditor::~BeatReelEditor()
 void BeatReelEditor::showPage (int index)
 {
     currentPage = index;
-    for (int i = 0; i < 4; ++i) tabs[i].setToggleState (i == index, dontSendNotification);
+    for (int i = 0; i < 5; ++i) tabs[i].setToggleState (i == index, dontSendNotification);
     auto* p = static_cast<Page*> (pages[index].get());
     pageView.setViewedComponent (p, false);
     p->setSize (pageView.getWidth() - 10, p->contentHeight());
@@ -753,6 +1003,19 @@ void BeatReelEditor::showPage (int index)
 void BeatReelEditor::styleChanged()
 {
     ++proc.styleVersion;
+}
+
+void BeatReelEditor::startIntroPreview()
+{
+    auto d = proc.getData();
+    if (d == nullptr || proc.style.intro == introNone) { introPreview = false; return; }
+    const auto it = introTiming (proc.style, *d);
+    introPreview = true;
+    introT = 0;
+    introStartMs = Time::getMillisecondCounterHiRes();
+    proc.previewPlaying = true;
+    proc.previewPos = 0;
+    proc.previewHold = (int64) (it.audioOffset() * (proc.getSampleRate() > 0 ? proc.getSampleRate() : 44100.0));
 }
 
 void BeatReelEditor::showMessage (const String& title, const String& msg)
@@ -859,13 +1122,29 @@ void BeatReelEditor::showActivation()
 void BeatReelEditor::timerCallback()
 {
     const double t = proc.getPreviewSeconds();
-    preview->update (t);
+    double videoT = t;
+    if (auto d0 = proc.getData())
+    {
+        const auto it = introTiming (proc.style, *d0);
+        if (introPreview)
+        {
+            introT = (Time::getMillisecondCounterHiRes() - introStartMs) / 1000.0;
+            if (! it.active) introPreview = false;
+            else if (introT > it.end() + 1.0)
+            {
+                if (introLoop) startIntroPreview();
+                else introPreview = false;
+            }
+        }
+        videoT = introPreview ? introT : t + it.audioOffset();
+    }
+    preview->update (videoT);
     recButton->repaint();
 
     if (auto d = proc.getData())
     {
         if (! scrub.isMouseButtonDown()) scrub.setValue (t / jmax (1e-6, d->duration), dontSendNotification);
-        timeLabel.setText (formatTime (t) + " / " + formatTime (d->duration), dontSendNotification);
+        timeLabel.setText (introPreview ? "INTRO " + String (introT, 1) + " s" : formatTime (t) + " / " + formatTime (d->duration), dontSendNotification);
     }
     playBtn.setButtonText (proc.previewPlaying.load() ? "PAUSE" : "PLAY");
     for (int i = 0; i < kNumAspects; ++i) aspectBtns[i].setToggleState (proc.style.aspect == i, dontSendNotification);
@@ -946,7 +1225,7 @@ void BeatReelEditor::resized()
     auto left = r.removeFromLeft (330).reduced (12, 10);
     left.removeFromBottom (24);
     auto tabRow = left.removeFromTop (32);
-    const int tw = tabRow.getWidth() / 4;
+    const int tw = tabRow.getWidth() / 5;
     for (auto& t : tabs) t.setBounds (tabRow.removeFromLeft (tw).reduced (2, 0));
     left.removeFromTop (10);
     pageView.setBounds (left);

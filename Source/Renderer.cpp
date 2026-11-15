@@ -47,6 +47,16 @@ Path patternGlyph (int pattern)
 
 namespace
 {
+inline float easeOutCubic (float x) { x = jlimit (0.0f, 1.0f, x); return 1.0f - std::pow (1.0f - x, 3.0f); }
+inline float easeInCubic (float x)  { x = jlimit (0.0f, 1.0f, x); return x * x * x; }
+inline float easeInOut (float x)    { x = jlimit (0.0f, 1.0f, x); return x < 0.5f ? 4 * x * x * x : 1 - std::pow (-2 * x + 2, 3.0f) / 2; }
+inline float easeOutBack (float x)
+{
+    x = jlimit (0.0f, 1.0f, x);
+    const float c1 = 1.70158f, c3 = c1 + 1.0f;
+    return 1.0f + c3 * std::pow (x - 1.0f, 3.0f) + c1 * std::pow (x - 1.0f, 2.0f);
+}
+
 //==============================================================================
 struct Frame
 {
@@ -60,6 +70,36 @@ struct Frame
     const float kick, hit;    // 0..1 decaying pulses
     const float react;
     int cardIndex = 0;
+
+    // CARD DEAL intro: elements fly in one after another (deal < 0 = off)
+    float deal = -1.0f;
+    int dealIndex = 0, dealCount = 1;
+
+    struct Dealt
+    {
+        Dealt (Frame& fr, Rectangle<float> r, bool fromTop = false) : f (fr), active (fr.deal >= 0.0f)
+        {
+            if (! active) return;
+            const int k = f.dealIndex++;
+            const float stagger = jmin (0.08f, 0.6f / (float) jmax (1, f.dealCount));
+            const float span = jmax (0.3f, 1.0f - stagger * (float) (f.dealCount - 1));
+            const float local = jlimit (0.0f, 1.0f, (f.deal - (float) k * stagger) / span);
+            const float e = easeOutBack (local);
+            f.g.saveState();
+            const float dy = (1.0f - e) * (fromTop ? -1.0f : 1.0f) * (float) f.H * 0.75f;
+            const float rot = (1.0f - e) * 0.3f * (k % 2 ? 1.0f : -1.0f);
+            f.g.addTransform (AffineTransform::rotation (rot, r.getCentreX(), r.getCentreY()).translated (0.0f, dy));
+            const float a = jlimit (0.0f, 1.0f, local * 3.0f);
+            if (a < 0.999f) { f.g.beginTransparencyLayer (a); layer = true; }
+        }
+        ~Dealt()
+        {
+            if (! active) return;
+            if (layer) f.g.endTransparencyLayer();
+            f.g.restoreState();
+        }
+        Frame& f; bool active, layer = false;
+    };
 
     Frame (Graphics& gr, int w, int h, const RenderContext& r)
         : g (gr), rc (r), st (*r.style), d (*r.data), W (w), H (h),
@@ -773,6 +813,7 @@ struct Frame
             case cardBass:   right = "TRIG"; break;
             default: break;
         }
+        Dealt dealt (*this, r);
         auto inner = cardFrame (r, cardName (id), right);
         Graphics::ScopedSaveState ss (g);
         g.reduceClipRegion (inner.expanded (2 * s).toNearestInt());
@@ -873,19 +914,6 @@ struct Frame
         g.drawText (formatTime (t) + " / " + formatTime (d.duration), label, Justification::centredRight, false);
     }
 
-    void watermark()
-    {
-        Graphics::ScopedSaveState ss (g);
-        g.addTransform (AffineTransform::rotation (-0.5f, W * 0.5f, H * 0.5f));
-        g.setFont (FontBank::get().font (1, {}, 110 * s));
-        g.setColour (Colours::white.withAlpha (0.22f));
-        for (int i = -4; i <= 4; ++i)
-            g.drawText ("BEATREEL DEMO  BEATREEL DEMO", Rectangle<float> (-W * 0.5f, H * 0.5f + i * 260 * s, W * 2.0f, 140 * s), Justification::centred, false);
-        g.setColour (Colours::black.withAlpha (0.18f));
-        for (int i = -4; i <= 4; ++i)
-            g.drawText ("BEATREEL DEMO  BEATREEL DEMO", Rectangle<float> (-W * 0.5f + 3 * s, H * 0.5f + i * 260 * s + 3 * s, W * 2.0f, 140 * s), Justification::centred, false);
-    }
-
     //==========================================================================
     static float cardWeight (int id) { return id == cardMidi ? 1.5f : id == cardBeat ? 1.35f : id == cardWave ? 0.65f : 1.0f; }
 
@@ -930,13 +958,16 @@ struct Frame
             g.drawText (st.footerText, f, Justification::centred, false);
             area.removeFromBottom (8 * s);
         }
-        if (st.showProgress) { progress (area.removeFromBottom (36 * s)); area.removeFromBottom (gap); }
-        if (st.showKeys)     { keys (area.removeFromBottom (68 * s));     area.removeFromBottom (gap); }
-        if (st.showHeader)   { header (area.removeFromTop (landscape ? 120 * s : 165 * s)); area.removeFromTop (gap); }
-
         std::vector<int> wide, small;
         for (int id : { cardBeat, cardMidi, cardWave }) if (st.hasCard (id)) wide.push_back (id);
         for (int id = 0; id < kNumCards; ++id) if (st.hasCard (id) && ! cardIsWide (id)) small.push_back (id);
+        dealCount = (int) (wide.size() + small.size()) + (st.showHeader ? 1 : 0) + (st.showKeys ? 1 : 0) + (st.showProgress ? 1 : 0);
+
+        Rectangle<float> headerR, keysR, progR;
+        if (st.showProgress) { progR = area.removeFromBottom (36 * s); area.removeFromBottom (gap); }
+        if (st.showKeys)     { keysR = area.removeFromBottom (68 * s); area.removeFromBottom (gap); }
+        if (st.showHeader)   { headerR = area.removeFromTop (landscape ? 120 * s : 165 * s); area.removeFromTop (gap); }
+        if (st.showHeader)   { Dealt dl (*this, headerR, true); header (headerR); }
 
         if (landscape && ! wide.empty() && ! small.empty())
         {
@@ -950,8 +981,441 @@ struct Frame
             const int cols = landscape ? 4 : (small.size() <= 4 && st.aspect != aspect9x16 ? 2 : 3);
             layoutColumn (area, wide, small, small.size() == 4 && ! landscape ? 2 : cols, gap);
         }
+        if (st.showKeys)     { Dealt dl (*this, keysR); keys (keysR); }
+        if (st.showProgress) { Dealt dl (*this, progR); progress (progR); }
+    }
+};
+} // namespace
 
-        if (rc.watermark) watermark();
+IntroTiming introTiming (const Style& st, const AnalysisData& d)
+{
+    IntroTiming it;
+    it.active = st.intro != introNone;
+    if (! it.active) return it;
+    double len = jlimit (0.25, 8.0, (double) st.introLength);
+    if (st.introSnap)
+    {
+        const double spb = d.secondsPerBeat();
+        len = jmax (1.0, std::round (len / spb)) * spb;
+    }
+    it.length = len;
+    it.transition = jlimit (0.0, 2.0, (double) st.introTransition);
+    it.preroll = st.introMode == introBeforeBeat;
+    return it;
+}
+
+double videoDuration (const Style& st, const AnalysisData& d)
+{
+    return d.duration + introTiming (st, d).audioOffset();
+}
+
+namespace
+{
+void drawWatermark (Graphics& g, int W, int H)
+{
+    const float s = (float) jmin (W, H) / 1080.0f;
+    Graphics::ScopedSaveState ss (g);
+    g.addTransform (AffineTransform::rotation (-0.5f, W * 0.5f, H * 0.5f));
+    g.setFont (FontBank::get().font (1, {}, 110 * s));
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        g.setColour (pass == 0 ? Colours::black.withAlpha (0.18f) : Colours::white.withAlpha (0.22f));
+        const float o = pass == 0 ? 3 * s : 0.0f;
+        for (int i = -4; i <= 4; ++i)
+            g.drawText ("BEATREEL DEMO  BEATREEL DEMO", Rectangle<float> (-W * 0.5f + o, H * 0.5f + i * 260 * s + o, W * 2.0f, 140 * s),
+                        Justification::centred, false);
+    }
+}
+
+//==============================================================================
+/** The six intro animations. T = video time, inner = context at the matching beat time. */
+struct Intro
+{
+    Graphics& g;
+    const int W, H;
+    const float s;
+    const RenderContext& inner;
+    const Style& st;
+    const AnalysisData& d;
+    const IntroTiming it;
+    const double T;
+
+    Intro (Graphics& gr, int w, int h, const RenderContext& in, const IntroTiming& timing, double videoT)
+        : g (gr), W (w), H (h), s ((float) jmin (w, h) / 1080.0f), inner (in), st (*in.style), d (*in.data), it (timing), T (videoT) {}
+
+    Rectangle<float> full() const { return { 0, 0, (float) W, (float) H }; }
+    Font titleFont (float h) const { return FontBank::get().titleFont (st, h); }
+    Font bodyFont (float h) const  { return FontBank::get().bodyFont (st, h); }
+    float kick() const             { return it.preroll ? 0.0f : d.pulse (d.kicks, inner.t, 6.0) * st.react; }
+    String meta() const
+    {
+        String m = String (roundToInt (d.info.bpm)) + " BPM   " + keyName (d.keyRoot, d.keyMinor);
+        if (st.subtitle.isNotEmpty()) m << "   " << st.subtitle;
+        return m;
+    }
+    /** Biggest font (up to maxH) that fits `text` into `width`. */
+    Font fitted (Font f, const String& text, float width, float maxH) const
+    {
+        f = f.withHeight (maxH);
+        const float tw = GlyphArrangement::getStringWidth (f, text);
+        return tw > width ? f.withHeight (maxH * width / tw) : f;
+    }
+
+    void reel (Graphics& gg, float deal = -1.0f)
+    {
+        Frame f (gg, W, H, inner);
+        f.deal = deal;
+        f.render();
+    }
+
+    void gradientBg()
+    {
+        g.setGradientFill (ColourGradient (st.bg1, 0, 0, st.bg2, (float) W * 0.4f, (float) H, false));
+        g.fillRect (full());
+    }
+
+    //==========================================================================
+    void slamScene (float p)
+    {
+        gradientBg();
+        const auto c = full().getCentre();
+        const float big = (float) jmax (W, H);
+        // rotating rays
+        {
+            Path rays;
+            const int n = 18;
+            const float rot = (float) T * 0.35f;
+            for (int i = 0; i < n; ++i)
+            {
+                const float a0 = rot + MathConstants<float>::twoPi * i / n, a1 = a0 + MathConstants<float>::twoPi / n * 0.45f;
+                rays.startNewSubPath (c);
+                rays.lineTo (c.x + std::cos (a0) * big, c.y + std::sin (a0) * big);
+                rays.lineTo (c.x + std::cos (a1) * big, c.y + std::sin (a1) * big);
+                rays.closeSubPath();
+            }
+            g.setColour (st.accent.withAlpha (0.10f + 0.08f * kick()));
+            g.fillPath (rays);
+        }
+        const float impact = 0.3f;
+        const float dt = (p - impact) * (float) it.length;   // seconds since impact
+        float scale, alpha = 1.0f;
+        Point<float> shake;
+        if (p < impact)
+        {
+            scale = 3.4f - 2.4f * easeInCubic (p / impact);
+            alpha = jmin (1.0f, p / impact * 1.6f);
+        }
+        else
+        {
+            scale = 1.0f + 0.07f * std::exp (-dt * 8.0f) * std::cos (dt * 32.0f);
+            const float amp = 28.0f * s * std::exp (-dt * 7.0f);
+            shake = { std::sin (dt * 93.0f) * amp, std::cos (dt * 71.0f) * amp };
+        }
+        const String title = st.title.toUpperCase();
+        auto f = fitted (titleFont (1), title, W * 0.84f, 300 * s);
+        const float th = f.getHeight();
+        auto box = Rectangle<float> (0, c.y - th * 0.6f, (float) W, th * 1.2f);
+        {
+            Graphics::ScopedSaveState ss (g);
+            g.addTransform (AffineTransform::scale (scale, scale, c.x, c.y).translated (shake));
+            g.setFont (f);
+            g.setColour (st.accent.withMultipliedAlpha (alpha));
+            g.drawText (title, box.translated (10 * s, 10 * s), Justification::centred, false);
+            g.setColour (st.text.withMultipliedAlpha (alpha));
+            g.drawText (title, box, Justification::centred, false);
+        }
+        if (dt > 0)
+        {
+            const float tw = jmin ((float) W * 0.84f, GlyphArrangement::getStringWidth (f, title));
+            const float grow = easeOutCubic (dt * 3.0f);
+            g.setColour (st.accent);
+            g.fillRect (Rectangle<float> (tw * grow, 12 * s).withCentre ({ c.x, box.getBottom() + 18 * s }).translated (shake.x, shake.y));
+            const float ma = jlimit (0.0f, 1.0f, (dt - 0.12f) * 4.0f);
+            g.setColour (st.dim.withAlpha (ma));
+            g.setFont (bodyFont (34 * s));
+            g.drawText (meta(), Rectangle<float> (0, box.getBottom() + 44 * s, (float) W, 50 * s), Justification::centred, false);
+            g.setColour (Colours::white.withAlpha (0.85f * std::exp (-dt * 11.0f)));
+            g.fillRect (full());
+        }
+    }
+
+    //==========================================================================
+    void typewriterScene (float p)
+    {
+        g.setColour (st.bg1);
+        g.fillRect (full());
+        g.setColour (st.text.withAlpha (0.05f));
+        for (float y = 0; y < H; y += 6 * s) g.fillRect (0.0f, y, (float) W, jmax (1.0f, s));
+
+        const Font mono = FontBank::get().font (6, {}, 10);
+        const float margin = W * 0.1f;
+        const float width = W - margin * 2;
+        const String title = st.title;
+        auto big = fitted (mono, "> " + title + "_", width, 120 * s);
+        const float lh = big.getHeight() * 1.25f;
+        const float y0 = H * 0.5f - lh;
+        const bool blink = std::fmod (T, 0.6) < 0.3;
+
+        auto typed = [&] (const String& txt, float from, float to) { return txt.substring (0, (int) std::floor (txt.length() * jlimit (0.0f, 1.0f, (p - from) / (to - from)))); };
+
+        // line 1: the title
+        const String t1 = typed (title, 0.02f, 0.5f);
+        g.setFont (big);
+        g.setColour (st.accent);
+        g.drawText (">", Rectangle<float> (margin, y0, width, lh), Justification::centredLeft, false);
+        const float px = GlyphArrangement::getStringWidth (big, "> ");
+        g.setColour (st.text);
+        g.drawText (t1, Rectangle<float> (margin + px, y0, width - px, lh), Justification::centredLeft, false);
+        const bool typing1 = p < 0.55f;
+        if (typing1 && (blink || p < 0.5f))
+        {
+            const float cx = margin + px + GlyphArrangement::getStringWidth (big, t1);
+            g.setColour (st.accent);
+            g.fillRect (cx + 4 * s, y0 + lh * 0.18f, big.getHeight() * 0.5f, lh * 0.64f);
+        }
+        // line 2: tempo + key
+        auto small = mono.withHeight (jmin (54 * s, big.getHeight() * 0.5f));
+        const float y1 = y0 + lh + 10 * s, lh2 = small.getHeight() * 1.4f;
+        if (p >= 0.55f)
+        {
+            g.setFont (small);
+            g.setColour (st.accent);
+            g.drawText (">", Rectangle<float> (margin, y1, width, lh2), Justification::centredLeft, false);
+            g.setColour (st.dim);
+            const float sp = GlyphArrangement::getStringWidth (small, "> ");
+            g.drawText (typed (meta(), 0.55f, 0.75f), Rectangle<float> (margin + sp, y1, width - sp, lh2), Justification::centredLeft, false);
+        }
+        // line 3: loading bar
+        if (p >= 0.78f)
+        {
+            const float lp = jlimit (0.0f, 1.0f, (p - 0.78f) / 0.2f);
+            const float y2 = y1 + lh2 + 6 * s;
+            g.setFont (small);
+            g.setColour (st.accent);
+            g.drawText ("> LOADING BEAT " + String (roundToInt (lp * 100)) + "%", Rectangle<float> (margin, y2, width, lh2), Justification::centredLeft, false);
+            auto bar = Rectangle<float> (margin, y2 + lh2 + 8 * s, width, 14 * s);
+            g.setColour (st.dim.withAlpha (0.3f));
+            g.fillRect (bar);
+            g.setColour (st.accent);
+            g.fillRect (bar.withWidth (bar.getWidth() * lp));
+        }
+    }
+
+    //==========================================================================
+    void countdownScene (float p)
+    {
+        gradientBg();
+        const auto c = full().getCentre();
+        const float k = kick();
+        for (int i = 1; i <= 3; ++i)
+        {
+            const float r = jmin (W, H) * (0.18f * i + 0.02f * k);
+            g.setColour (st.dim.withAlpha (0.18f));
+            g.drawEllipse (c.x - r, c.y - r, r * 2, r * 2, 2 * s);
+        }
+        const float seg = 0.25f;
+        if (p < seg * 3)
+        {
+            const int idx = jmin (2, (int) (p / seg));
+            const float local = (p - idx * seg) / seg;
+            const float sc = 1.9f - 0.9f * easeOutBack (jmin (1.0f, local * 2.5f));
+            const float a = local < 0.82f ? 1.0f : jmax (0.0f, (1.0f - local) / 0.18f);
+            // ring burst
+            const float rr = jmin (W, H) * (0.12f + 0.4f * easeOutCubic (local));
+            g.setColour (st.accent.withAlpha (0.8f * (1.0f - local)));
+            g.drawEllipse (c.x - rr, c.y - rr, rr * 2, rr * 2, 8 * s * (1.0f - local) + s);
+            Graphics::ScopedSaveState ss (g);
+            g.addTransform (AffineTransform::scale (sc, sc, c.x, c.y));
+            g.setFont (titleFont (420 * s));
+            g.setColour (st.accent.withMultipliedAlpha (a));
+            g.drawText (String (3 - idx), full().translated (12 * s, 12 * s), Justification::centred, false);
+            g.setColour (st.text.withMultipliedAlpha (a));
+            g.drawText (String (3 - idx), full(), Justification::centred, false);
+        }
+        else
+        {
+            const float local = (p - seg * 3) / (1.0f - seg * 3);
+            const float sc = easeOutBack (jmin (1.0f, local * 2.0f));
+            const String title = st.title.toUpperCase();
+            auto f = fitted (titleFont (1), title, W * 0.84f, 240 * s);
+            Graphics::ScopedSaveState ss (g);
+            g.addTransform (AffineTransform::scale (jmax (0.01f, sc), jmax (0.01f, sc), c.x, c.y));
+            g.setFont (f);
+            g.setColour (st.text);
+            g.drawText (title, full(), Justification::centred, false);
+            g.setFont (bodyFont (34 * s));
+            g.setColour (st.accent);
+            g.drawText (meta(), full().withTrimmedTop (f.getHeight() * 1.5f), Justification::centred, false);
+        }
+        // three progress dots
+        for (int i = 0; i < 3; ++i)
+        {
+            const bool on = p >= i * seg;
+            const float r = 9 * s;
+            const float x = c.x + (i - 1) * 40 * s;
+            g.setColour (on ? st.accent : st.dim.withAlpha (0.4f));
+            g.fillEllipse (x - r, H * 0.86f - r, r * 2, r * 2);
+        }
+    }
+
+    //==========================================================================
+    void irisScene (float p)
+    {
+        g.setColour (st.bg1);
+        g.fillRect (full());
+        const auto c = full().getCentre();
+        const float in = easeOutCubic (p / 0.4f);
+        const float k = kick();
+        // dashed rotating ring
+        const float rr = jmin (W, H) * (0.36f + 0.015f * k);
+        Path ring;
+        ring.addCentredArc (c.x, c.y, rr, rr, (float) T * 0.8f, 0, MathConstants<float>::twoPi * in, true);
+        Path dashed;
+        const float dashes[] = { 26 * s, 16 * s };
+        PathStrokeType (5 * s).createDashedStroke (dashed, ring, dashes, 2);
+        g.setColour (st.accent);
+        g.fillPath (dashed);
+
+        const String title = st.title.toUpperCase();
+        auto f = fitted (titleFont (1), title, rr * 1.7f, 200 * s);
+        const float sc = 0.85f + 0.15f * in;
+        Graphics::ScopedSaveState ss (g);
+        g.addTransform (AffineTransform::scale (sc, sc, c.x, c.y));
+        g.setFont (f);
+        g.setColour (st.text.withAlpha (in));
+        g.drawText (title, full().translated (0, -f.getHeight() * 0.15f), Justification::centred, false);
+        g.setFont (bodyFont (30 * s));
+        g.setColour (st.dim.withAlpha (jlimit (0.0f, 1.0f, (p - 0.3f) * 4.0f)));
+        g.drawText (meta(), full().withTrimmedTop (f.getHeight() * 1.2f), Justification::centred, false);
+    }
+
+    //==========================================================================
+    void glitch (float amount, float titleAlpha)
+    {
+        Image reelImg (Image::RGB, W, H, false, SoftwareImageType());
+        { Graphics gi (reelImg); reel (gi); }
+        Random rng ((int64) std::floor (T * 24.0) * 7919 + 17);
+
+        g.drawImageAt (reelImg, 0, 0);
+        if (amount > 0.01f)
+        {
+            // horizontal tears
+            const int slices = 6 + (int) (14 * amount);
+            for (int i = 0; i < slices; ++i)
+            {
+                const int y = rng.nextInt (H), hh = jmax (2, (int) (rng.nextFloat() * H * 0.08f * amount) + 2);
+                const int dx = (int) ((rng.nextFloat() - 0.5f) * W * 0.25f * amount);
+                g.setOpacity (1.0f);
+                g.drawImage (reelImg, dx, y, W, hh, 0, y, W, hh);
+            }
+            // colour ghosts
+            g.setOpacity (0.35f * amount);
+            g.drawImageAt (reelImg, (int) (14 * s * amount), 0);
+            g.setOpacity (1.0f);
+            for (int i = 0; i < (int) (10 * amount); ++i)
+            {
+                g.setColour ((i % 2 ? st.accent : st.accent2).withAlpha (0.55f));
+                g.fillRect (rng.nextFloat() * W, rng.nextFloat() * H, rng.nextFloat() * W * 0.3f * amount, rng.nextFloat() * 18 * s + 3 * s);
+            }
+            g.setColour (Colours::black.withAlpha (0.25f * amount));
+            for (float y = 0; y < H; y += 4 * s) g.fillRect (0.0f, y, (float) W, jmax (1.0f, s));
+            g.setColour (Colours::black.withAlpha (0.4f * amount));
+            g.fillRect (full());
+        }
+        // flickering title with RGB split
+        const bool visible = rng.nextFloat() > 0.18f * amount;
+        if (titleAlpha > 0.01f && visible)
+        {
+            const String title = st.title.toUpperCase();
+            auto f = fitted (titleFont (1), title, W * 0.86f, 260 * s);
+            const float off = (6 + 22 * amount) * s;
+            const float jx = (rng.nextFloat() - 0.5f) * 20 * s * amount;
+            g.setFont (f);
+            g.setColour (st.accent.withAlpha (0.85f * titleAlpha));
+            g.drawText (title, full().translated (-off + jx, 0), Justification::centred, false);
+            g.setColour (st.accent2.withAlpha (0.85f * titleAlpha));
+            g.drawText (title, full().translated (off + jx, 0), Justification::centred, false);
+            g.setColour (st.text.withAlpha (titleAlpha));
+            g.drawText (title, full().translated (jx, 0), Justification::centred, false);
+        }
+    }
+
+    //==========================================================================
+    void scene (float p)
+    {
+        switch (st.intro)
+        {
+            case introSlam:       slamScene (p); break;
+            case introTypewriter: typewriterScene (p); break;
+            case introCountdown:  countdownScene (p); break;
+            case introIris:       irisScene (p); break;
+            default: break;
+        }
+    }
+
+    void draw()
+    {
+        const float p = it.length > 0 ? (float) jlimit (0.0, 1.0, T / it.length) : 1.0f;
+        const bool out = T >= it.length;
+        const float x = ! out ? 0.0f : (it.transition > 0 ? (float) jlimit (0.0, 1.0, (T - it.length) / it.transition) : 1.0f);
+
+        if (st.intro == introDeal)
+        {
+            reel (g, (float) jlimit (0.0, 1.0, T / jmax (0.05, it.end())));
+            return;
+        }
+        if (st.intro == introGlitch)
+        {
+            glitch (out ? 0.0f : std::pow (1.0f - p, 1.3f) * 0.85f + 0.15f, out ? 1.0f - easeInCubic (x) : 1.0f);
+            return;
+        }
+        if (! out) { scene (p); return; }
+
+        // hand over to the reel
+        reel (g);
+        const auto c = full().getCentre();
+        switch (st.intro)
+        {
+            case introSlam:
+            case introCountdown:
+            {
+                const float e = easeInCubic (x);
+                const float sc = st.intro == introSlam ? 1.0f + 0.4f * e : 1.0f + 4.0f * e * e;
+                Graphics::ScopedSaveState ss (g);
+                g.addTransform (AffineTransform::scale (sc, sc, c.x, c.y));
+                g.beginTransparencyLayer (1.0f - easeOutCubic (x));
+                scene (1.0f);
+                g.endTransparencyLayer();
+                break;
+            }
+            case introTypewriter:
+            {
+                const float dy = -easeInOut (x) * H;
+                Graphics::ScopedSaveState ss (g);
+                g.addTransform (AffineTransform::translation (0, dy));
+                scene (1.0f);
+                g.setColour (st.accent);
+                g.fillRect (0.0f, (float) H - 10 * s, (float) W, 10 * s);
+                break;
+            }
+            case introIris:
+            {
+                const float r = easeInOut (x) * full().getCentre().getDistanceFrom ({}) * 1.05f;
+                Path outside;
+                outside.addRectangle (full());
+                outside.addEllipse (c.x - r, c.y - r, r * 2, r * 2);
+                outside.setUsingNonZeroWinding (false);
+                {
+                    Graphics::ScopedSaveState ss (g);
+                    g.reduceClipRegion (outside);
+                    scene (1.0f);
+                }
+                g.setColour (st.accent);
+                g.drawEllipse (c.x - r, c.y - r, r * 2, r * 2, 8 * s);
+                break;
+            }
+            default: break;
+        }
     }
 };
 } // namespace
@@ -959,9 +1423,26 @@ struct Frame
 void renderFrame (Graphics& g, int w, int h, const RenderContext& rc)
 {
     if (rc.data == nullptr || rc.style == nullptr || rc.data->numFrames == 0) return;
-    Frame f (g, w, h, rc);
-    f.render();
+    const auto& d = *rc.data;
+    const auto it = introTiming (*rc.style, d);
+    const double T = rc.t;
+
+    RenderContext inner = rc;
+    inner.t = jlimit (0.0, d.duration, T - it.audioOffset());
+
+    if (! it.active || T >= it.end() || T < 0.0)
+    {
+        Frame f (g, w, h, inner);
+        f.render();
+    }
+    else
+    {
+        Intro intro (g, w, h, inner, it, T);
+        intro.draw();
+    }
+    if (rc.watermark) drawWatermark (g, w, h);
 }
+
 
 void drawLookSwatch (Graphics& g, Rectangle<float> r, const Style& s)
 {

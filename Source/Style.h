@@ -25,6 +25,11 @@ namespace brl
 
     enum MidiAlign { midiFromLoopStart, midiFromSongPosition };
 
+    enum IntroType { introNone, introSlam, introTypewriter, introGlitch, introCountdown, introDeal, introIris, kNumIntros };
+    const char* introName (int i);
+    const char* introDescription (int i);
+    enum IntroMode { introOverBeat, introBeforeBeat };
+
     struct Style
     {
         // --- look (what the 12 looks / randomize change) ---
@@ -49,6 +54,13 @@ namespace brl
         int    fps = 30;
         int    midiAlign = midiFromLoopStart;
         bool   lossless = false;
+
+        // --- intro ---
+        int    intro = introNone;
+        float  introLength = 2.5f;           // seconds (snapped to whole beats when introSnap)
+        float  introTransition = 0.5f;       // seconds the intro takes to hand over to the reel
+        int    introMode = introOverBeat;
+        bool   introSnap = true;
 
         bool hasCard (int id) const        { return (cards >> id) & 1u; }
         void setCard (int id, bool on)     { cards = on ? (cards | (1u << id)) : (cards & ~(1u << id)); }

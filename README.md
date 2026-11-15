@@ -9,6 +9,7 @@ BEATREEL sits on your master track and records your beat bit-for-bit. It turns t
 - **9:16, 4:5, 1:1 and 16:9** videos (1080p) with the original audio.
 - **12 looks**, your own colours, backgrounds (solid, gradient, mesh, dots, grid, stripes, patterns, your own image) and presets.
 - **RANDOMIZE** gives you a new look and card mix in one click.
+- **Intro animations**: SLAM, TYPEWRITER, GLITCH, COUNTDOWN, CARD DEAL, IRIS. Preview one any time, and set its length and hand-over by dragging on a timeline (with optional snap to beats). It can play over the start of your beat, or before it as a silent lead-in.
 - **Works offline** once activated (signed license keys, verified locally).
 - Windows 10/11 (VST3), macOS 11+ Apple silicon & Intel (VST3 + AU), plus a standalone app.
 
@@ -129,4 +130,5 @@ The installers put it in the data folder. BEATREEL uses `libx264` when available
 brl_render --demo reel.mp4 --look 3 --aspect 9:16
 brl_render mybeat.wav reel.mp4 --mid melody.mid --bpm 150 --title "HEAVEN" --random 42
 brl_render mybeat.wav --still frame.png 12.5 --look 11 --aspect 16:9
+brl_render --demo reel.mp4 --intro 1 --intro-len 2.4 --intro-fade 0.5 --intro-before   # 1-6: SLAM .. IRIS
 ```

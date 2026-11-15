@@ -53,6 +53,10 @@ int main (int argc, char* argv[])
         for (int i = 0; i < kNumAspects; ++i) if (as == aspectName (i)) st.aspect = i;
     if (opt ("--fps") == "60") st.fps = 60;
     st.lossless = a.contains ("--lossless");
+    if (auto v = opt ("--intro"); v.isNotEmpty()) st.intro = jlimit (0, (int) kNumIntros - 1, v.getIntValue());
+    if (auto v = opt ("--intro-len"); v.isNotEmpty()) st.introLength = (float) v.getDoubleValue();
+    if (auto v = opt ("--intro-fade"); v.isNotEmpty()) st.introTransition = (float) v.getDoubleValue();
+    if (a.contains ("--intro-before")) st.introMode = introBeforeBeat;
 
     if (a[1] == "--sweep")
     {
@@ -64,13 +68,16 @@ int main (int argc, char* argv[])
             {
                 Style sw = makeLook (look);
                 sw.cards = (1u << kNumCards) - 1;
+                sw.intro = (look + asp) % kNumIntros;
+                sw.introMode = look % 2;
                 sw.aspect = asp;
                 auto size = aspectSize (asp) / 4;
                 Image img (Image::ARGB, size.x, size.y, true, SoftwareImageType());
                 for (int i = 0; i < n; ++i)
                 {
                     const double times[] = { 0.0, 1e-4, 0.01, 0.03, data->duration - 0.01, data->duration, data->duration + 1.0, -1.0 };
-                    const double tt = i < 8 ? times[i] : data->duration * (i - 8) / (n - 8);
+                    const double vd = videoDuration (sw, *data);
+                    const double tt = i < 8 ? times[i] : vd * (i - 8) / (n - 8);
                     Graphics g (img);
                     RenderContext rc; rc.data = data.get(); rc.midi = (i % 2) ? midi.get() : nullptr; rc.style = &sw; rc.t = tt;
                     renderFrame (g, size.x, size.y, rc);

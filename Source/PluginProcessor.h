@@ -93,6 +93,7 @@ namespace brl
         std::atomic<bool>  previewPlaying { true };
         std::atomic<bool>  previewAudio { false };
         std::atomic<int64> previewPos { 0 };
+        std::atomic<int64> previewHold { 0 };     // host samples of silence before preview audio resumes (lead-in intros)
         std::atomic<uint32> lastAudioCallbackMs { 0 };
         double getPreviewSeconds();       // message thread: advances the clock if the host isn't calling us
 
