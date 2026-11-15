@@ -1,0 +1,92 @@
+name: Build BEATREEL
+
+# Builds the Windows (VST3) and macOS (VST3 + AU, universal) packages.
+# Run it from the Actions tab ("Run workflow"), or push a tag like v1.0.0.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build VST3 + standalone
+        run: cmake --build build --config Release --target BeatReel_VST3 BeatReel_Standalone --parallel
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $d = "dist/BEATREEL-Windows"
+          New-Item -ItemType Directory $d -Force | Out-Null
+          Copy-Item -Recurse build/BeatReel_artefacts/Release/VST3/BEATREEL.vst3 $d/
+          Copy-Item build/BeatReel_artefacts/Release/Standalone/BEATREEL.exe $d/
+          Copy-Item packaging/windows/Install-BEATREEL.bat $d/
+          Copy-Item packaging/INSTALL_WINDOWS.txt $d/
+          Copy-Item packaging/LICENSE.txt $d/
+          Copy-Item packaging/THIRD_PARTY_NOTICES.txt $d/
+
+      - name: Bundle ffmpeg (encoder used for the MP4 export)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_x
+          $exe = Get-ChildItem ffmpeg_x -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          Copy-Item $exe.FullName dist/BEATREEL-Windows/ffmpeg.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BEATREEL-Windows
+          path: dist/BEATREEL-Windows
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (universal: Apple silicon + Intel)
+        run: cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build VST3 + AU + standalone
+        run: cmake --build build --config Release --target BeatReel_VST3 BeatReel_AU BeatReel_Standalone -- -quiet
+
+      - name: Package
+        run: |
+          d="dist/BEATREEL-macOS"
+          mkdir -p "$d"
+          a=build/BeatReel_artefacts/Release
+          ditto "$a/VST3/BEATREEL.vst3" "$d/BEATREEL.vst3"
+          ditto "$a/AU/BEATREEL.component" "$d/BEATREEL.component"
+          ditto "$a/Standalone/BEATREEL.app" "$d/BEATREEL.app"
+          cp "packaging/mac/Install BEATREEL.command" packaging/INSTALL_MAC.txt packaging/LICENSE.txt packaging/THIRD_PARTY_NOTICES.txt "$d/"
+          chmod +x "$d/Install BEATREEL.command"
+
+      - name: Bundle ffmpeg
+        run: |
+          d="dist/BEATREEL-macOS"
+          if curl -fsSL -o ff.zip "https://evermeet.cx/ffmpeg/getrelease/zip"; then
+            unzip -o ff.zip -d ffx && cp ffx/ffmpeg "$d/ffmpeg" && chmod +x "$d/ffmpeg"
+          else
+            echo "::warning::Couldn't download ffmpeg - customers will need 'brew install ffmpeg' (see INSTALL_MAC.txt)"
+          fi
+
+      # Ad-hoc signature so the bundles load. For public sales, replace with your
+      # Developer ID signature + notarization (see README "Selling it").
+      - name: Sign (ad-hoc)
+        run: |
+          d="dist/BEATREEL-macOS"
+          for b in "$d/BEATREEL.vst3" "$d/BEATREEL.component" "$d/BEATREEL.app"; do codesign --force --deep --sign - "$b"; done
+          [ -f "$d/ffmpeg" ] && codesign --force --sign - "$d/ffmpeg" || true
+
+      - name: Zip
+        run: cd dist && ditto -c -k --keepParent BEATREEL-macOS BEATREEL-macOS.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BEATREEL-macOS
+          path: dist/BEATREEL-macOS.zip

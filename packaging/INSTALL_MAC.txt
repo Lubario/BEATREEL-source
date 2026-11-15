@@ -1,0 +1,36 @@
+BEATREEL - QUICK INSTALL (macOS 11 or later, Apple silicon & Intel)
+===================================================================
+
+1. Unzip BEATREEL-macOS.zip.
+2. Right-click  "Install BEATREEL.command"  > Open  (the first time macOS asks
+   whether you trust it - click Open).
+   It copies:
+     BEATREEL.vst3       -> ~/Library/Audio/Plug-Ins/VST3/
+     BEATREEL.component  -> ~/Library/Audio/Plug-Ins/Components/   (Audio Unit)
+     BEATREEL.app        -> ~/Applications/                          (standalone)
+     ffmpeg              -> ~/Library/Application Support/BEATREEL/  (encodes the MP4)
+3. Restart your DAW and put BEATREEL LAST on your master track.
+   Logic / GarageBand use the AU; FL Studio, Ableton, Reaper, Studio One etc. use the VST3.
+
+No ffmpeg in the zip? Install it once with Homebrew:  brew install ffmpeg
+(BEATREEL finds it automatically.)
+
+MAKE A REEL
+  1. Select the loop / region you want.
+  2. Press REC in BEATREEL, then press play. It stops by itself at the end of the
+     loop (or press REC again). Bouncing your song with REC armed also works.
+  3. LOAD .MID - load the MIDI of your melody for the piano roll.
+  4. Pick one of the 12 looks or hit RANDOMIZE, then tweak it in STYLE.
+  5. Choose 9:16, 4:5, 1:1 or 16:9 and hit EXPORT. The MP4 carries your original audio.
+
+ACTIVATE
+  Click ACTIVATE and paste the key from your purchase email. No internet needed.
+  One key per purchase, for up to 3 of your computers (Windows or Mac).
+  Without a key, exports carry a "DEMO" watermark.
+
+TROUBLESHOOTING
+  * "BEATREEL is damaged / can't be opened": run the installer again (it clears
+    the download quarantine), or in Terminal:
+      xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/BEATREEL.vst3
+  * AU not showing in Logic: restart the Mac once, or run the installer again.
+  * Presets and captures: ~/Library/Application Support/BEATREEL (INFO > OPEN FOLDER).

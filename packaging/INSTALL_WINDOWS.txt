@@ -1,0 +1,35 @@
+BEATREEL - QUICK INSTALL (WINDOWS 10/11, 64-bit)
+=================================================
+
+1. Unzip this folder anywhere (e.g. your Desktop).
+2. Double-click  Install-BEATREEL.bat  and allow it to make changes.
+   It copies:
+     BEATREEL.vst3  ->  C:\Program Files\Common Files\VST3\
+     ffmpeg.exe     ->  %APPDATA%\BEATREEL\         (encodes the MP4)
+     BEATREEL.exe   ->  C:\Program Files\BEATREEL\  (standalone app)
+3. Open your DAW and rescan plugins.
+   FL Studio: Options > Manage plugins > Find plugins, then star BEATREEL.
+4. Put BEATREEL LAST on your master track.
+
+Manual install: copy the BEATREEL.vst3 folder into C:\Program Files\Common Files\VST3
+and ffmpeg.exe into %APPDATA%\BEATREEL (paste that path into Explorer's address bar).
+
+MAKE A REEL
+  1. Select the loop / region you want in the playlist.
+  2. Press REC in BEATREEL, then press play. It stops by itself at the end of the
+     loop (or press REC again). Rendering your song with REC armed also works.
+  3. LOAD .MID - export the MIDI of your melody and load it for the piano roll.
+  4. Pick one of the 12 looks or hit RANDOMIZE, then make it yours in STYLE
+     (colours, background, image, fonts, your own .ttf/.otf fonts).
+  5. Choose 9:16, 4:5, 1:1 or 16:9 and hit EXPORT. The MP4 carries your original audio.
+
+ACTIVATE
+  Click ACTIVATE and paste the key from your purchase email. No internet needed.
+  One key per purchase, for up to 3 of your computers (Windows or Mac).
+  Without a key, exports carry a "DEMO" watermark.
+
+TROUBLESHOOTING
+  * "ffmpeg not found": INFO tab > LOCATE FFMPEG, and pick ffmpeg.exe.
+  * Plugin not showing up: make sure your DAW is 64-bit and scans
+    C:\Program Files\Common Files\VST3.
+  * Your presets and captures live in %APPDATA%\BEATREEL (INFO > OPEN FOLDER).

@@ -1,0 +1,28 @@
+BEATREEL - END USER LICENSE AGREEMENT
+(Template - replace [YOUR NAME / COMPANY] and have it checked for your country before selling.)
+
+Copyright (c) [YEAR] [YOUR NAME / COMPANY]. All rights reserved.
+
+1. LICENSE. With a purchase you get one personal, non-transferable license key.
+   You may activate BEATREEL on up to three (3) computers that you own or use,
+   on Windows and/or macOS.
+
+2. YOUR CONTENT. Videos you make with BEATREEL are yours. You may post, sell and
+   monetise them freely. Removing the "MADE WITH BEATREEL" footer is allowed.
+
+3. RESTRICTIONS. You may not share, resell, rent or publish your license key,
+   or reverse-engineer, crack or redistribute the software.
+
+4. DEMO MODE. Without a valid key BEATREEL works fully, but exported videos carry
+   a "DEMO" watermark.
+
+5. NO WARRANTY. The software is provided "as is", without warranty of any kind.
+   To the maximum extent permitted by law, [YOUR NAME / COMPANY] is not liable for
+   any damages arising from its use.
+
+6. THIRD-PARTY SOFTWARE. BEATREEL ships with third-party components under their
+   own licenses; see THIRD_PARTY_NOTICES.txt.
+
+7. REFUNDS. [Describe your refund policy.]
+
+Contact: [your email]

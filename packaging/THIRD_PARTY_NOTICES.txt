@@ -1,0 +1,19 @@
+THIRD-PARTY NOTICES
+===================
+
+JUCE (https://juce.com) - used under the JUCE 8 licence.
+
+VST is a registered trademark of Steinberg Media Technologies GmbH.
+
+ffmpeg (https://ffmpeg.org) - shipped as a separate program (ffmpeg / ffmpeg.exe)
+that BEATREEL runs to encode video. The bundled build is licensed under the
+GNU General Public License v3 (it includes x264). Its source code is available at
+https://ffmpeg.org/download.html and https://github.com/BtbN/FFmpeg-Builds
+(Windows build) / https://evermeet.cx/ffmpeg/ (macOS build). You may replace it with
+any other ffmpeg build.
+
+Fonts embedded in BEATREEL, all under the SIL Open Font License 1.1
+(https://openfontlicense.org):
+  Space Grotesk, Bebas Neue, Anton, Archivo Black, Rubik Mono One,
+  Barlow Condensed, JetBrains Mono, Press Start 2P, Playfair Display,
+  UnifrakturMaguntia.

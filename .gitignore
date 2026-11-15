@@ -1,0 +1,5 @@
+build/
+JUCE
+seller_keys/
+*.user
+.DS_Store
