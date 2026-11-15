@@ -917,6 +917,13 @@ void BeatReelEditor::paint (Graphics& g)
     g.setColour (UiLookAndFeel::dim());
     g.setFont (UiLookAndFeel::ui (14));
     g.drawText ("LOOK: " + proc.style.lookName, Rectangle<int> (16, getHeight() - 30, 300, 22), Justification::centredLeft, false);
+   #ifndef BEATREEL_BUILD
+    #define BEATREEL_BUILD "dev"
+   #endif
+   #ifndef JucePlugin_VersionString
+    #define JucePlugin_VersionString "1.0.0"
+   #endif
+    g.drawText ("v" JucePlugin_VersionString "  build " BEATREEL_BUILD, Rectangle<int> (16, getHeight() - 30, 300, 22), Justification::centredRight, false);
 }
 
 void BeatReelEditor::resized()

@@ -75,7 +75,15 @@ target_sources(BeatReel PRIVATE
 
 target_include_directories(BeatReel PRIVATE Source)
 
+# Short commit id shown in the UI, so you can tell builds apart.
+execute_process(COMMAND git rev-parse --short HEAD WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                OUTPUT_VARIABLE BEATREEL_BUILD OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT BEATREEL_BUILD)
+    set(BEATREEL_BUILD "dev")
+endif()
+
 target_compile_definitions(BeatReel PUBLIC
+    BEATREEL_BUILD="${BEATREEL_BUILD}"
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
