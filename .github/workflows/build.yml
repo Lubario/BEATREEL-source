@@ -11,7 +11,7 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure
         run: cmake -B build -A x64
@@ -39,7 +39,7 @@ jobs:
           $exe = Get-ChildItem ffmpeg_x -Recurse -Filter ffmpeg.exe | Select-Object -First 1
           Copy-Item $exe.FullName dist/BEATREEL-Windows/ffmpeg.exe
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: BEATREEL-Windows
           path: dist/BEATREEL-Windows
@@ -47,7 +47,7 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: "Configure (universal: Apple silicon + Intel)"
         run: cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
@@ -66,14 +66,16 @@ jobs:
           cp "packaging/mac/Install BEATREEL.command" packaging/INSTALL_MAC.txt packaging/LICENSE.txt packaging/THIRD_PARTY_NOTICES.txt "$d/"
           chmod +x "$d/Install BEATREEL.command"
 
-      - name: Bundle ffmpeg
+      - name: Bundle ffmpeg (universal)
         run: |
           d="dist/BEATREEL-macOS"
-          if curl -fsSL -o ff.zip "https://evermeet.cx/ffmpeg/getrelease/zip"; then
-            unzip -o ff.zip -d ffx && cp ffx/ffmpeg "$d/ffmpeg" && chmod +x "$d/ffmpeg"
-          else
-            echo "::warning::Couldn't download ffmpeg - customers will need 'brew install ffmpeg' (see INSTALL_MAC.txt)"
-          fi
+          base=https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0
+          curl -fsSL "$base/ffmpeg-darwin-arm64.gz" | gunzip > ff_arm64
+          curl -fsSL "$base/ffmpeg-darwin-x64.gz"   | gunzip > ff_x64
+          lipo -create ff_arm64 ff_x64 -output "$d/ffmpeg"
+          chmod +x "$d/ffmpeg"
+          lipo -info "$d/ffmpeg"
+          "$d/ffmpeg" -hide_banner -encoders | grep -E "libx264|videotoolbox"
 
       # Ad-hoc signature so the bundles load. For public sales, replace with your
       # Developer ID signature + notarization (see README "Selling it").
@@ -86,7 +88,7 @@ jobs:
       - name: Zip
         run: cd dist && ditto -c -k --keepParent BEATREEL-macOS BEATREEL-macOS.zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: BEATREEL-macOS
           path: dist/BEATREEL-macOS.zip
