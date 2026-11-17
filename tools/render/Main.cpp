@@ -53,6 +53,12 @@ int main (int argc, char* argv[])
         for (int i = 0; i < kNumAspects; ++i) if (as == aspectName (i)) st.aspect = i;
     if (opt ("--fps") == "60") st.fps = 60;
     st.lossless = a.contains ("--lossless");
+    if (auto v = opt ("--cards"); v.isNotEmpty())
+    {
+        st.cards = 0;
+        for (auto& n : StringArray::fromTokens (v.toUpperCase(), ",", {}))
+            for (int i = 0; i < kNumCards; ++i) if (n.trim() == cardName (i)) st.setCard (i, true);
+    }
     if (auto v = opt ("--intro"); v.isNotEmpty()) st.intro = jlimit (0, (int) kNumIntros - 1, v.getIntValue());
     if (auto v = opt ("--intro-len"); v.isNotEmpty()) st.introLength = (float) v.getDoubleValue();
     if (auto v = opt ("--intro-fade"); v.isNotEmpty()) st.introTransition = (float) v.getDoubleValue();

@@ -134,7 +134,7 @@ namespace
         }
         void refresh() override { for (auto* t : tiles) t->repaint(); }
         int contentHeight() const override { return 30 + (kNumLooks / 2) * 104; }
-        void paint (Graphics& g) override { heading (g, { 4, 0, getWidth(), 24 }, "12 LOOKS - CLICK TO APPLY, THEN MAKE IT YOURS"); }
+        void paint (Graphics& g) override { heading (g, { 4, 0, getWidth(), 24 }, String (kNumLooks) + " LOOKS - CLICK TO APPLY, THEN MAKE IT YOURS"); }
         void resized() override
         {
             const int w = (getWidth() - 8) / 2;

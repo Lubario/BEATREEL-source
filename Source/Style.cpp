@@ -6,10 +6,11 @@ namespace brl
 const char* cardName (int id)
 {
     static const char* n[] = { "COVER", "WAVE", "BEAT", "MIDI", "SCOPE", "BASS", "LEVELS",
-                               "VECTOR", "RADIAL", "SPECTRUM", "ORBIT", "TRACK", "DOTS" };
+                               "VECTOR", "RADIAL", "SPECTRUM", "ORBIT", "TRACK", "DOTS",
+                               "PIANO", "TEMPO", "VINYL", "SPECTROGRAM", "STEPS" };
     return isPositiveAndBelow (id, (int) kNumCards) ? n[id] : "?";
 }
-bool cardIsWide (int id) { return id == cardBeat || id == cardMidi || id == cardWave; }
+bool cardIsWide (int id) { return id == cardBeat || id == cardMidi || id == cardWave || id == cardSpectrogram; }
 
 const char* aspectName (int a)
 {
@@ -39,7 +40,8 @@ const char* patternName (int p)
 
 const char* introName (int i)
 {
-    static const char* n[] = { "NONE", "SLAM", "TYPEWRITER", "GLITCH", "COUNTDOWN", "CARD DEAL", "IRIS" };
+    static const char* n[] = { "NONE", "SLAM", "TYPEWRITER", "GLITCH", "COUNTDOWN", "CARD DEAL", "IRIS",
+                               "FADE IN", "FADE FROM WHITE", "ZOOM IN", "ZOOM OUT", "SLIDE UP", "WIPE", "SPIN" };
     return n[jlimit (0, (int) kNumIntros - 1, i)];
 }
 const char* introDescription (int i)
@@ -50,7 +52,14 @@ const char* introDescription (int i)
                                "The reel glitches in under a flickering title",
                                "3 - 2 - 1 countdown, then the title pops",
                                "Every card flies in and lands, one by one",
-                               "Title card, then an iris opens onto the reel" };
+                               "Title card, then an iris opens onto the reel",
+                               "The reel fades up from black",
+                               "The reel fades in out of a white flash",
+                               "The reel grows in from the middle",
+                               "The reel settles in from a close-up",
+                               "The reel slides up from the bottom",
+                               "The reel is wiped on from left to right",
+                               "The reel spins and pops into place" };
     return n[jlimit (0, (int) kNumIntros - 1, i)];
 }
 
@@ -60,7 +69,8 @@ namespace
     Colour c (uint32 rgb) { return Colour (0xff000000 | rgb); }
 
     const char* names[kNumLooks] = { "PAPER", "NIGHT BLOOM", "STUDIO", "TERMINAL", "BUBBLEGUM", "DEEP SEA",
-                                     "SUNSET", "ICE", "GOLD RUSH", "ACID", "LAVENDER", "GOTHIC" };
+                                     "SUNSET", "ICE", "GOLD RUSH", "ACID", "LAVENDER", "GOTHIC",
+                                     "VAPORWAVE", "MINT", "NEON CITY", "SAKURA", "CARBON", "ARCADE" };
 
     uint32 defaultCards()
     {
@@ -107,6 +117,12 @@ Style makeLook (int i)
         case 9:  set (0x1C1C1C, 0x111111, 0x262626, 0xD7FF3A, 0xF2F2F2, 0x8C8C8C, 0xD7FF3A, 0xFF3AD7, bgGrid,     0, 3.0f, 10, 1.0f,  false, 4, 6); break;
         case 10: set (0xE9E2FF, 0xF8F5FF, 0xFFFFFF, 0x6E56CF, 0x2A1F5C, 0x9A8FC4, 0x6E56CF, 0xFF8AD8, bgPattern, 14, 2.0f, 6,  1.0f,  false, 1, 0); s.pattern = patSparkle; break;
         case 11: set (0x080606, 0x4A0A10, 0x0E0909, 0x5A0F14, 0xF2E6E6, 0x8C5A5E, 0xE0142C, 0xFF6B7A, bgMesh,     2, 1.5f, 0,  0.9f,  true,  9, 5); break;
+        case 12: set (0x2B1055, 0x7597DE, 0x1B0B3A, 0xFF71CE, 0xFDF6FF, 0xB9A3E3, 0xFF71CE, 0x01CDFE, bgGrid,     4, 2.0f, 6,  0.82f, true,  4, 0); break;
+        case 13: set (0xE6F7F1, 0xCFF0E4, 0xFFFFFF, 0x1E5E4B, 0x10372C, 0x6E9C8D, 0x10B981, 0xF59E0B, bgDots,    12, 2.0f, 6,  1.0f,  false, 3, 0); break;
+        case 14: set (0x05010F, 0x2A0A55, 0x0B0618, 0x3B1E6E, 0xF5F3FF, 0x8B7FB8, 0x00F5D4, 0xF15BB5, bgMesh,    10, 1.5f, 0,  0.85f, true,  1, 0); break;
+        case 15: set (0xFFF1F2, 0xFFE4E6, 0xFFFFFF, 0xF9A8D4, 0x4C1D3D, 0xB4839F, 0xEC4899, 0xA78BFA, bgPattern, 20, 1.5f, 0,  0.92f, false, 8, 0); s.pattern = patSparkle; break;
+        case 16: set (0x0A0A0A, 0x121212, 0x141414, 0x2A2A2A, 0xEDEDED, 0x7A7A7A, 0xFFFFFF, 0xFF3B30, bgStripes,  6, 1.0f, 0,  1.0f,  false, 2, 6); break;
+        case 17: set (0x0B0B2B, 0x15154A, 0x10103A, 0xFFD400, 0xFFFFFF, 0x8C8CC8, 0xFFD400, 0xFF2E63, bgDots,     0, 3.0f, 8,  1.0f,  false, 7, 6); break;
         default: break;
     }
     s.footerText = "MADE WITH BEATREEL";
@@ -148,7 +164,7 @@ void randomise (Style& s, Random& rng)
 
     // cards: 1–2 wide, 3–6 small
     s.cards = 0;
-    std::vector<int> wide { cardBeat, cardMidi, cardWave }, small;
+    std::vector<int> wide { cardBeat, cardMidi, cardWave, cardSpectrogram }, small;
     for (int i = 0; i < kNumCards; ++i) if (! cardIsWide (i)) small.push_back (i);
     auto shuffle = [&] (std::vector<int>& v) { for (int i = (int) v.size() - 1; i > 0; --i) std::swap (v[(size_t) i], v[(size_t) rng.nextInt (i + 1)]); };
     shuffle (wide); shuffle (small);

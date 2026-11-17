@@ -2,18 +2,18 @@
 
 **Turn any beat into a reel, right inside your DAW.**
 
-BEATREEL sits on your master track and records your beat bit-for-bit. It turns the recording into a ready-to-post video: animated cards with the waveform, the bass, the beat and the MIDI, in 12 looks you can make your own.
+BEATREEL sits on your master track and records your beat bit-for-bit. It turns the recording into a ready-to-post video: animated cards with the waveform, the bass, the beat and the MIDI, in 18 looks you can make your own.
 
 - **One click REC**: records one loop of your DAW and stops by itself at the loop end. It also captures your DAW's export (offline render).
 - **Load your .mid** for the piano-roll card. Add your own fonts (.ttf / .otf).
 - **9:16, 4:5, 1:1 and 16:9** videos (1080p) with the original audio.
-- **12 looks**, your own colours, backgrounds (solid, gradient, mesh, dots, grid, stripes, patterns, your own image) and presets.
+- **18 looks**, your own colours, backgrounds (solid, gradient, mesh, dots, grid, stripes, patterns, your own image) and presets.
 - **RANDOMIZE** gives you a new look and card mix in one click.
-- **Intro animations**: SLAM, TYPEWRITER, GLITCH, COUNTDOWN, CARD DEAL, IRIS. Preview one any time, and set its length and hand-over by dragging on a timeline (with optional snap to beats). It can play over the start of your beat, or before it as a silent lead-in.
+- **14 intro animations**: SLAM, TYPEWRITER, GLITCH, COUNTDOWN, CARD DEAL and IRIS, plus simple ones (FADE IN, FADE FROM WHITE, ZOOM IN, ZOOM OUT, SLIDE UP, WIPE, SPIN). Preview one any time, and set its length and hand-over by dragging on a timeline (with optional snap to beats). It can play over the start of your beat, or before it as a silent lead-in.
 - **Works offline** once activated (signed license keys, verified locally).
 - Windows 10/11 (VST3), macOS 11+ Apple silicon & Intel (VST3 + AU), plus a standalone app.
 
-## The 13 cards
+## The 18 cards
 
 | Card | Shows |
 |---|---|
@@ -30,6 +30,11 @@ BEATREEL sits on your master track and records your beat bit-for-bit. It turns t
 | TRACK | Rhythm-game lane: your hits fall onto the line, with score and combo. |
 | DOTS | LED dot-matrix spectrum. |
 | COVER | Big title card with BPM and key. |
+| PIANO | Keyboard lighting the notes that are playing (from your .mid, or detected from the audio). |
+| TEMPO | Big BPM, bar.beat counter, beat squares and a swinging pendulum. |
+| VINYL | Spinning record with your title on the label, bumping on kicks. |
+| SPECTROGRAM | Scrolling heat map of the last 4 seconds of frequencies. |
+| STEPS | 16-step grid of the current bar: kicks, hits, highs and lows light up as they play. |
 
 There's also a header (title, BPM, detected key, subtitle), a key strip that lights the current note, a progress bar and a footer. Everything reacts to your kicks, and the amount is adjustable.
 
@@ -130,5 +135,5 @@ The installers put it in the data folder. BEATREEL uses `libx264` when available
 brl_render --demo reel.mp4 --look 3 --aspect 9:16
 brl_render mybeat.wav reel.mp4 --mid melody.mid --bpm 150 --title "HEAVEN" --random 42
 brl_render mybeat.wav --still frame.png 12.5 --look 11 --aspect 16:9
-brl_render --demo reel.mp4 --intro 1 --intro-len 2.4 --intro-fade 0.5 --intro-before   # 1-6: SLAM .. IRIS
+brl_render --demo reel.mp4 --intro 1 --intro-len 2.4 --intro-fade 0.5 --intro-before   # 1-6: SLAM .. IRIS, 7-13: FADE IN .. SPIN
 ```

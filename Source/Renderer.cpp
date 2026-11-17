@@ -791,6 +791,247 @@ struct Frame
         }
     }
 
+    //==========================================================================
+    /** Notes sounding right now: from the .mid when loaded, otherwise the strongest audio pitch classes + the bass note. */
+    std::vector<int> activeNotes() const
+    {
+        std::vector<int> out;
+        if (rc.midi != nullptr && ! rc.midi->notes.empty())
+        {
+            double q = st.midiAlign == midiFromSongPosition ? songQuarter() : beatPos();
+            q = std::fmod (jmax (0.0, q), rc.midi->lengthQuarters);
+            for (auto& nt : rc.midi->notes)
+                if (nt.start <= q && q < nt.end) out.push_back (nt.note);
+            return out;
+        }
+        const auto& ch = d.chroma[(size_t) d.frameIndex (t)];
+        for (int pc = 0; pc < 12; ++pc)
+            if (ch[(size_t) pc] > 0.75f) out.push_back (60 + pc);
+        const float hz = d.bassHz[(size_t) d.frameIndex (t)];
+        if (hz > 0) out.push_back ((int) std::round (69 + 12 * std::log2 (hz / 440.0)));
+        return out;
+    }
+
+    void cardPianoBody (Rectangle<float> r)
+    {
+        auto notes = activeNotes();
+        // as many octaves as fit with readable keys (1-4), starting at the lowest note in use
+        const int octaves = jlimit (1, 4, (int) (r.getWidth() / (18 * s)) / 7);
+        int lo = 48;
+        if (rc.midi != nullptr && ! rc.midi->notes.empty()) lo = (rc.midi->lowest / 12) * 12;
+        else if (! notes.empty()) lo = (*std::min_element (notes.begin(), notes.end()) / 12) * 12;
+        // keep the notes playing right now on screen
+        if (! notes.empty())
+        {
+            const int top = *std::max_element (notes.begin(), notes.end());
+            while (top > lo + octaves * 12 - 1) lo += 12;
+        }
+        const int hi = lo + octaves * 12 - 1;
+        auto isBlack = [] (int n) { const int pc = n % 12; return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10; };
+        auto on = [&] (int n) { return std::find (notes.begin(), notes.end(), n) != notes.end(); };
+
+        auto label = r.removeFromTop (26 * s);
+        String names;
+        for (auto n : notes) names << midiNoteName (n) << " ";
+        g.setColour (st.accent);
+        g.setFont (body (18));
+        g.drawText (names.isEmpty() ? String ("-") : names.trim(), label, Justification::centredLeft, true);
+        r.removeFromTop (6 * s);
+
+        int whites = 0;
+        for (int n = lo; n <= hi; ++n) if (! isBlack (n)) ++whites;
+        const float ww = r.getWidth() / (float) jmax (1, whites);
+        const float rad = jmin (4 * s, ww * 0.2f);
+        int wi = 0;
+        std::vector<std::pair<int, float>> blacks;
+        for (int n = lo; n <= hi; ++n)
+        {
+            if (isBlack (n)) { blacks.push_back ({ n, r.getX() + wi * ww }); continue; }
+            auto k = Rectangle<float> (r.getX() + wi * ww, r.getY(), ww, r.getHeight()).reduced (s, 0);
+            g.setColour (on (n) ? st.accent : Colour (0xfff3f1ec).interpolatedWith (st.cardFill, 0.12f));
+            g.fillRoundedRectangle (k, rad);
+            g.setColour (st.cardBorder.withAlpha (0.6f));
+            g.drawRoundedRectangle (k, rad, s);
+            if (n % 12 == 0 && ww > 14 * s)
+            {
+                g.setColour (on (n) ? st.accent.contrasting() : st.dim);
+                g.setFont (body (jmin (14.0f, ww * 0.5f / s)));
+                g.drawText ("C" + String (n / 12 - 1), k.removeFromBottom (20 * s), Justification::centred, false);
+            }
+            ++wi;
+        }
+        for (auto& [n, x] : blacks)
+        {
+            auto k = Rectangle<float> (x - ww * 0.32f, r.getY(), ww * 0.64f, r.getHeight() * 0.6f);
+            g.setColour (on (n) ? st.accent2 : Colour (0xff17161a).interpolatedWith (st.cardBorder, 0.15f));
+            g.fillRoundedRectangle (k, rad);
+        }
+    }
+
+    void cardTempoBody (Rectangle<float> r)
+    {
+        const int bpb = jmax (1, d.info.beatsPerBar);
+        const double songBeat = songQuarter();
+        const int beatInBar = ((int) std::floor (songBeat + 1e-6)) % bpb;
+        const float beatFrac = (float) (songBeat - std::floor (songBeat));
+
+        auto top = r.removeFromTop (r.getHeight() * 0.5f);
+        {
+            const String bpmText (roundToInt (d.info.bpm));
+            auto box = top.removeFromLeft (top.getWidth() * 0.6f);
+            auto f = title (box.getHeight() * 0.85f / s);
+            const float tw = GlyphArrangement::getStringWidth (f, bpmText);
+            if (tw > box.getWidth() * 0.95f) f = f.withHeight (f.getHeight() * box.getWidth() * 0.95f / tw);
+            g.setColour (st.text);
+            g.setFont (f);
+            g.drawText (bpmText, box, Justification::centredLeft, false);
+        }
+        g.setColour (st.dim);
+        g.setFont (body (15));
+        g.drawText ("BPM", top.removeFromTop (top.getHeight() * 0.5f), Justification::bottomLeft, false);
+        g.setColour (st.accent);
+        g.drawText ("BAR " + String (songBar (t)) + "." + String (beatInBar + 1), top, Justification::topLeft, false);
+
+        // pendulum
+        auto pend = r.removeFromBottom (r.getHeight() * 0.45f);
+        const float swing = std::sin ((float) (songBeat * MathConstants<double>::pi));
+        const Point<float> pivot (pend.getCentreX(), pend.getY());
+        const float len = pend.getHeight() * 0.95f;
+        const Point<float> bob (pivot.x + swing * len * 0.6f, pivot.y + len * std::sqrt (jmax (0.0f, 1.0f - swing * swing * 0.36f)));
+        g.setColour (st.dim);
+        g.drawLine ({ pivot, bob }, 2.5f * s);
+        g.setColour (st.accent);
+        g.fillEllipse (Rectangle<float> (14 * s, 14 * s).withCentre (bob));
+
+        // beat squares
+        r = r.reduced (0, 6 * s);
+        const float gap = 6 * s, w = (r.getWidth() - gap * (bpb - 1)) / bpb;
+        for (int i = 0; i < bpb; ++i)
+        {
+            auto b = Rectangle<float> (r.getX() + i * (w + gap), r.getY(), w, r.getHeight());
+            const bool cur = i == beatInBar;
+            g.setColour (cur ? (i == 0 ? st.accent2 : st.accent).withAlpha (1.0f - 0.5f * beatFrac) : st.dim.withAlpha (i < beatInBar ? 0.4f : 0.15f));
+            g.fillRoundedRectangle (b, st.radius * s * 0.3f);
+        }
+    }
+
+    void cardVinylBody (Rectangle<float> r)
+    {
+        const float k = kick * react;
+        auto disc = r.withSizeKeepingCentre (jmin (r.getWidth(), r.getHeight()), jmin (r.getWidth(), r.getHeight())).reduced (4 * s);
+        const auto c = disc.getCentre();
+        const float rad = disc.getWidth() * 0.5f * (1.0f + 0.02f * k);
+        const float angle = (float) (t * MathConstants<double>::twoPi * 33.333 / 60.0);
+        g.setColour (Colour (0xff0d0d0f));
+        g.fillEllipse (c.x - rad, c.y - rad, rad * 2, rad * 2);
+        for (float gr = rad * 0.95f; gr > rad * 0.4f; gr -= rad * 0.045f)
+        {
+            g.setColour (Colours::white.withAlpha (0.05f));
+            g.drawEllipse (c.x - gr, c.y - gr, gr * 2, gr * 2, 1.0f * s);
+        }
+        // sheen that rotates
+        Path sheen;
+        sheen.addPieSegment (c.x - rad, c.y - rad, rad * 2, rad * 2, angle, angle + 0.5f, 0.4f);
+        g.setColour (Colours::white.withAlpha (0.08f));
+        g.fillPath (sheen);
+        sheen.applyTransform (AffineTransform::rotation (MathConstants<float>::pi, c.x, c.y));
+        g.fillPath (sheen);
+        // label
+        const float lr = rad * 0.36f;
+        g.setColour (st.accent);
+        g.fillEllipse (c.x - lr, c.y - lr, lr * 2, lr * 2);
+        {
+            Graphics::ScopedSaveState ss (g);
+            g.addTransform (AffineTransform::rotation (angle, c.x, c.y));
+            g.setColour (st.accent.contrasting());
+            g.setFont (title (jmax (6.0f, lr * 0.42f / s)));
+            g.drawFittedText (st.title, Rectangle<float> (lr * 1.6f, lr * 0.7f).withCentre (c).toNearestInt(), Justification::centred, 1, 0.5f);
+        }
+        g.setColour (st.cardFill);
+        g.fillEllipse (c.x - 4 * s, c.y - 4 * s, 8 * s, 8 * s);
+    }
+
+    void cardSpectrogramBody (Rectangle<float> r)
+    {
+        const double win = 4.0;                       // seconds of history, "now" at the right edge
+        const int cols = jmax (8, (int) (r.getWidth() / (5.0f * s))), rows = 40;
+        const float cw = r.getWidth() / cols, rh = r.getHeight() / rows;
+        for (int c = 0; c < cols; ++c)
+        {
+            const double tt = t - win + win * (c + 1) / cols;
+            if (tt < 0) continue;
+            const auto& sp = d.spectrum[(size_t) d.frameIndex (tt)];
+            for (int row = 0; row < rows; ++row)
+            {
+                const float v = sp[(size_t) (row * AnalysisData::kBands / rows)];
+                if (v < 0.08f) continue;
+                const Colour col = v < 0.6f ? st.cardFill.interpolatedWith (st.accent, v / 0.6f)
+                                            : st.accent.interpolatedWith (st.accent2, (v - 0.6f) / 0.4f);
+                g.setColour (col);
+                g.fillRect (r.getX() + c * cw, r.getBottom() - (row + 1) * rh, cw + 0.5f, rh + 0.5f);
+            }
+        }
+        g.setColour (st.text);
+        g.fillRect (r.getRight() - 2 * s, r.getY(), 2 * s, r.getHeight());
+        g.setColour (st.dim);
+        g.setFont (body (13));
+        g.drawText ("16k", r.reduced (4 * s), Justification::topLeft, false);
+        g.drawText ("30", r.reduced (4 * s), Justification::bottomLeft, false);
+    }
+
+    void cardStepsBody (Rectangle<float> r)
+    {
+        const double spb = d.secondsPerBeat(), s16 = spb / 4.0;
+        const int steps = d.info.beatsPerBar * 4;
+        const double songBeat = songQuarter();
+        const double barStartBeat = std::floor (songBeat / d.info.beatsPerBar) * d.info.beatsPerBar;
+        const double barStartT = (barStartBeat - d.info.startPpq) * spb;
+        const int cur = jlimit (0, steps - 1, (int) std::floor ((t - barStartT) / s16));
+
+        auto hasOnset = [&] (const std::vector<double>& list, double a, double b)
+        {
+            auto it = std::lower_bound (list.begin(), list.end(), a - s16 * 0.3);
+            return it != list.end() && *it < b - s16 * 0.3;
+        };
+        struct Row { const char* name; int kind; };
+        const Row rows[] = { { "KICK", 0 }, { "HIT", 1 }, { "HIGH", 2 }, { "LOW", 3 } };
+        const int nRows = 4;
+        auto labels = r.removeFromLeft (44 * s);
+        const float gap = 3 * s;
+        const float cw = (r.getWidth() - gap * (steps - 1)) / steps, rh = (r.getHeight() - gap * (nRows - 1)) / nRows;
+        for (int ri = 0; ri < nRows; ++ri)
+        {
+            const float y = r.getY() + ri * (rh + gap);
+            g.setColour (st.dim);
+            g.setFont (body (13));
+            g.drawText (rows[ri].name, Rectangle<float> (labels.getX(), y, labels.getWidth(), rh), Justification::centredLeft, false);
+            for (int i = 0; i < steps; ++i)
+            {
+                const double a = barStartT + i * s16, b = a + s16;
+                bool lit = false;
+                switch (rows[ri].kind)
+                {
+                    case 0: lit = hasOnset (d.kicks, a, b); break;
+                    case 1: lit = hasOnset (d.hits, a, b) && ! hasOnset (d.kicks, a, b); break;
+                    case 2: lit = a >= 0 && d.frameValue (d.high, a + s16 * 0.25) > d.frameValue (d.high, jmax (0.0, a - s16)) * 1.4f; break;
+                    default: lit = a >= 0 && d.frameValue (d.low, a + s16 * 0.25) > 0.6f * *std::max_element (d.low.begin(), d.low.end()); break;
+                }
+                auto cell = Rectangle<float> (r.getX() + i * (cw + gap), y, cw, rh);
+                const bool isCur = i == cur;
+                Colour col = lit ? (i <= cur ? (ri == 0 ? st.accent : st.accent2) : st.text.withAlpha (0.45f))
+                                 : st.dim.withAlpha (i % 4 == 0 ? 0.22f : 0.12f);
+                if (isCur && lit) col = col.brighter (0.3f);
+                g.setColour (col);
+                g.fillRoundedRectangle (cell, jmin (4 * s, cw * 0.25f));
+                if (isCur)
+                {
+                    g.setColour (st.text);
+                    g.drawRoundedRectangle (cell.expanded (s), jmin (4 * s, cw * 0.25f), 1.5f * s);
+                }
+            }
+        }
+    }
+
     void drawCard (int id, Rectangle<float> r)
     {
         String right;
@@ -811,6 +1052,11 @@ struct Frame
                 else right = "AUDIO KEYS";
                 break;
             case cardBass:   right = "TRIG"; break;
+            case cardPiano:  right = rc.midi != nullptr ? "MIDI" : "AUDIO"; break;
+            case cardTempo:  right = String (d.info.beatsPerBar) + "/4"; break;
+            case cardVinyl:  right = "33 RPM"; break;
+            case cardSpectrogram: right = "4 S"; break;
+            case cardSteps:  right = "16 STEPS"; break;
             default: break;
         }
         Dealt dealt (*this, r);
@@ -832,6 +1078,11 @@ struct Frame
             case cardOrbit:    cardOrbitBody (inner); break;
             case cardTrack:    cardTrackBody (inner); break;
             case cardDots:     cardDotsBody (inner); break;
+            case cardPiano:    cardPianoBody (inner); break;
+            case cardTempo:    cardTempoBody (inner); break;
+            case cardVinyl:    cardVinylBody (inner); break;
+            case cardSpectrogram: cardSpectrogramBody (inner); break;
+            case cardSteps:    cardStepsBody (inner); break;
             default: break;
         }
     }
@@ -915,7 +1166,7 @@ struct Frame
     }
 
     //==========================================================================
-    static float cardWeight (int id) { return id == cardMidi ? 1.5f : id == cardBeat ? 1.35f : id == cardWave ? 0.65f : 1.0f; }
+    static float cardWeight (int id) { return id == cardMidi ? 1.5f : id == cardBeat ? 1.35f : id == cardWave ? 0.65f : id == cardSpectrogram ? 0.9f : 1.0f; }
 
     void layoutColumn (Rectangle<float> area, const std::vector<int>& wide, const std::vector<int>& small, int cols, float gap)
     {
@@ -959,7 +1210,7 @@ struct Frame
             area.removeFromBottom (8 * s);
         }
         std::vector<int> wide, small;
-        for (int id : { cardBeat, cardMidi, cardWave }) if (st.hasCard (id)) wide.push_back (id);
+        for (int id : { cardBeat, cardMidi, cardSpectrogram, cardWave }) if (st.hasCard (id)) wide.push_back (id);
         for (int id = 0; id < kNumCards; ++id) if (st.hasCard (id) && ! cardIsWide (id)) small.push_back (id);
         dealCount = (int) (wide.size() + small.size()) + (st.showHeader ? 1 : 0) + (st.showKeys ? 1 : 0) + (st.showProgress ? 1 : 0);
 
@@ -1341,6 +1592,71 @@ struct Intro
     }
 
     //==========================================================================
+    /** FADE / ZOOM / SLIDE / WIPE / SPIN: the reel itself animates in over the intro + hand-over time. */
+    void simpleIntro (float q)
+    {
+        const auto c = full().getCentre();
+        switch (st.intro)
+        {
+            case introFade:
+            case introFadeWhite:
+            {
+                reel (g);
+                g.setColour ((st.intro == introFade ? Colours::black : Colours::white).withAlpha (1.0f - easeInOut (q)));
+                g.fillRect (full());
+                break;
+            }
+            case introZoomIn:
+            case introZoomOut:
+            case introSpin:
+            {
+                g.setColour (st.intro == introSpin ? st.bg1 : Colours::black);
+                g.fillRect (full());
+                const float e = st.intro == introSpin ? easeOutBack (q) : easeOutCubic (q);
+                const float sc = st.intro == introZoomIn ? 0.35f + 0.65f * e
+                               : st.intro == introZoomOut ? 2.2f - 1.2f * e
+                               : jmax (0.02f, e);
+                const float rot = st.intro == introSpin ? (1.0f - easeOutCubic (q)) * -MathConstants<float>::pi : 0.0f;
+                Graphics::ScopedSaveState ss (g);
+                // scale + rotate around the centre of the frame
+                g.addTransform (AffineTransform::translation (-c.x, -c.y).rotated (rot).scaled (sc).translated (c.x, c.y));
+                const float a = jlimit (0.0f, 1.0f, q * 2.5f);
+                if (a < 0.999f) g.beginTransparencyLayer (a);
+                reel (g);
+                if (a < 0.999f) g.endTransparencyLayer();
+                break;
+            }
+            case introSlideUp:
+            {
+                g.setColour (st.bg1);
+                g.fillRect (full());
+                Graphics::ScopedSaveState ss (g);
+                g.addTransform (AffineTransform::translation (0, (1.0f - easeOutCubic (q)) * H));
+                reel (g);
+                break;
+            }
+            case introWipe:
+            {
+                g.setColour (st.bg1);
+                g.fillRect (full());
+                const float x = easeInOut (q) * W;
+                {
+                    Graphics::ScopedSaveState ss (g);
+                    g.reduceClipRegion (Rectangle<float> (0, 0, x, (float) H).toNearestInt());
+                    reel (g);
+                }
+                if (q < 0.999f)
+                {
+                    g.setColour (st.accent);
+                    g.fillRect (x - 4 * s, 0.0f, 8 * s, (float) H);
+                }
+                break;
+            }
+            default: reel (g); break;
+        }
+    }
+
+    //==========================================================================
     void scene (float p)
     {
         switch (st.intro)
@@ -1359,6 +1675,11 @@ struct Intro
         const bool out = T >= it.length;
         const float x = ! out ? 0.0f : (it.transition > 0 ? (float) jlimit (0.0, 1.0, (T - it.length) / it.transition) : 1.0f);
 
+        if (introIsSimple (st.intro))
+        {
+            simpleIntro ((float) jlimit (0.0, 1.0, T / jmax (0.05, it.end())));
+            return;
+        }
         if (st.intro == introDeal)
         {
             reel (g, (float) jlimit (0.0, 1.0, T / jmax (0.05, it.end())));

@@ -8,6 +8,7 @@ namespace brl
     {
         cardCover, cardWave, cardBeat, cardMidi, cardScope, cardBass, cardLevels,
         cardVector, cardRadial, cardSpectrum, cardOrbit, cardTrack, cardDots,
+        cardPiano, cardTempo, cardVinyl, cardSpectrogram, cardSteps,
         kNumCards
     };
     const char* cardName (int id);
@@ -25,7 +26,10 @@ namespace brl
 
     enum MidiAlign { midiFromLoopStart, midiFromSongPosition };
 
-    enum IntroType { introNone, introSlam, introTypewriter, introGlitch, introCountdown, introDeal, introIris, kNumIntros };
+    enum IntroType { introNone, introSlam, introTypewriter, introGlitch, introCountdown, introDeal, introIris,
+                     introFade, introFadeWhite, introZoomIn, introZoomOut, introSlideUp, introWipe, introSpin, kNumIntros };
+    /** Simple intros just animate the reel itself in (no title card). */
+    inline bool introIsSimple (int i) { return i >= introFade; }
     const char* introName (int i);
     const char* introDescription (int i);
     enum IntroMode { introOverBeat, introBeforeBeat };
@@ -70,7 +74,7 @@ namespace brl
         void copyLookFrom (const Style& other);
     };
 
-    constexpr int kNumLooks = 12;
+    constexpr int kNumLooks = 18;
     Style makeLook (int index);              // full style incl. a default card set
     String lookName (int index);
     void randomise (Style& s, Random& rng);
