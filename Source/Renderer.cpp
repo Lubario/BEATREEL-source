@@ -104,7 +104,7 @@ struct Frame
     Frame (Graphics& gr, int w, int h, const RenderContext& r)
         : g (gr), rc (r), st (*r.style), d (*r.data), W (w), H (h),
           s ((float) jmin (w, h) / 1080.0f), t (jlimit (0.0, jmax (0.0, r.data->duration), r.t)),
-          kick (r.data->pulse (r.data->kicks, t, 6.0)), hit (r.data->pulse (r.data->hits, t, 9.0)),
+          kick (zoomPulse (*r.style, *r.data, t)), hit (r.data->pulse (r.data->hits, t, 9.0)),
           react (r.style->react)
     {}
 
@@ -1425,6 +1425,57 @@ struct Frame
 } // namespace
 
 //==============================================================================
+float zoomPulse (const Style& st, const AnalysisData& d, double tIn)
+{
+    if (st.zoomMode == zoomOff) return 0.0f;
+    const double t = tIn - st.zoomNudgeMs / 1000.0;
+    const double decay = 13.0 - 9.0 * jlimit (0.0, 1.0, (double) st.zoomLength);   // short = fast fall-off
+    if (st.zoomMode == zoomAuto) return d.pulse (d.kicks, t, decay);
+    if (t < 0) return 0.0f;
+
+    const double spb = d.secondsPerBeat();
+    const double songBeat = d.info.startPpq + t / spb;
+    double since = -1.0;   // beats since the last zoom
+    if (st.zoomMode == zoomPattern)
+    {
+        if ((st.zoomSteps & 0xffffu) == 0) return 0.0f;
+        const double stepBeats = d.info.beatsPerBar / 16.0;
+        const double stepPos = songBeat / stepBeats;
+        const int64 cur = (int64) std::floor (stepPos + 1e-9);
+        for (int64 k = cur; k > cur - 32; --k)
+        {
+            const int step = (int) (((k % 16) + 16) % 16);
+            if ((st.zoomSteps >> step) & 1u) { since = (stepPos - (double) k) * stepBeats; break; }
+        }
+    }
+    else
+    {
+        const double every = st.zoomMode == zoomEveryBeat ? 1.0 : st.zoomMode == zoomEvery2Beats ? 2.0
+                           : st.zoomMode == zoomEveryHalfBeat ? 0.5 : (double) d.info.beatsPerBar;
+        since = songBeat - std::floor (songBeat / every + 1e-9) * every;
+    }
+    if (since < 0) return 0.0f;
+    // don't zoom before the capture starts
+    if (since * spb > t + 1e-6) return 0.0f;
+    return (float) std::exp (-since * spb * decay);
+}
+
+uint32 patternFromKicks (const AnalysisData& d)
+{
+    std::array<int, 16> votes {};
+    const double stepSec = d.secondsPerBar() / 16.0;
+    for (double k : d.kicks)
+    {
+        const double songStep = (d.info.startPpq / d.info.beatsPerBar * 16.0) + k / stepSec;
+        votes[(size_t) (((int64) std::llround (songStep) % 16 + 16) % 16)]++;
+    }
+    const double bars = jmax (1.0, d.bars());
+    uint32 mask = 0;
+    for (int i = 0; i < 16; ++i)
+        if (votes[(size_t) i] >= jmax (1.0, bars * 0.5)) mask |= 1u << i;
+    return mask != 0 ? mask : 0x1111u;
+}
+
 FrameLayout computeLayout (const Style& st, int W, int H)
 {
     FrameLayout L;
@@ -1557,7 +1608,7 @@ struct Intro
     Rectangle<float> full() const { return { 0, 0, (float) W, (float) H }; }
     Font titleFont (float h) const { return FontBank::get().titleFont (st, h); }
     Font bodyFont (float h) const  { return FontBank::get().bodyFont (st, h); }
-    float kick() const             { return it.preroll ? 0.0f : d.pulse (d.kicks, inner.t, 6.0) * st.react; }
+    float kick() const             { return it.preroll ? 0.0f : zoomPulse (st, d, inner.t) * st.react; }
     String meta() const
     {
         String m = String (roundToInt (d.info.bpm)) + " BPM   " + keyName (d.keyRoot, d.keyMinor);

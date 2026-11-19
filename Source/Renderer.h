@@ -42,6 +42,12 @@ namespace brl
     };
     FrameLayout computeLayout (const Style& st, int w, int h);
 
+    /** 0..1 "beat zoom" amount at capture time t (before the reaction strength is applied). */
+    float zoomPulse (const Style& st, const AnalysisData& d, double t);
+
+    /** Fills a 16-step pattern from the detected kicks (the most common hits across all bars). */
+    uint32 patternFromKicks (const AnalysisData& d);
+
     /** Draws one video frame into a w x h canvas at the graphics origin. Thread-safe (no shared mutable state). */
     void renderFrame (Graphics& g, int w, int h, const RenderContext& rc);
 

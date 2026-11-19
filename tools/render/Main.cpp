@@ -66,6 +66,24 @@ int main (int argc, char* argv[])
     if (auto v = opt ("--intro-fade"); v.isNotEmpty()) st.introTransition = (float) v.getDoubleValue();
     if (a.contains ("--intro-before")) st.introMode = introBeforeBeat;
 
+    if (a[1] == "--zoomtest")
+    {
+        // prints the beat-zoom amount on a 16th-note grid for the first bar, per mode
+        Style z = makeLook (0);
+        const double s16 = data->secondsPerBar() / 16.0;
+        for (int m = 0; m < kNumZoomModes; ++m)
+        {
+            z.zoomMode = m; z.zoomSteps = 0x2091u; z.zoomNudgeMs = 0;
+            String line = String (zoomModeName (m)).paddedRight (' ', 24);
+            for (int i = 0; i < 16; ++i) line << (zoomPulse (z, *data, data->secondsPerBar() + i * s16 + 0.001) > 0.9f ? "X" : ".");
+            std::cout << line << "\n";
+        }
+        z.zoomMode = zoomEveryBeat; z.zoomNudgeMs = 100;
+        std::cout << "every beat, nudge +100ms: pulse at beat " << zoomPulse (z, *data, data->secondsPerBar() + 0.001)
+                  << ", 100 ms later " << zoomPulse (z, *data, data->secondsPerBar() + 0.101) << "\n";
+        return 0;
+    }
+
     if (a[1] == "--sweep")
     {
         // stress test: every card, every look, every aspect, many times incl. the exact start and end
@@ -78,6 +96,9 @@ int main (int argc, char* argv[])
                 sw.cards = (1u << kNumCards) - 1;
                 sw.intro = (look + asp) % kNumIntros;
                 sw.introMode = look % 2;
+                sw.zoomMode = (look + asp) % kNumZoomModes;
+                sw.zoomSteps = 0x9249u;
+                sw.zoomNudgeMs = (float) ((look % 3) - 1) * 120.0f;
                 sw.aspect = asp;
                 auto size = aspectSize (asp) / 4;
                 Image img (Image::ARGB, size.x, size.y, true, SoftwareImageType());

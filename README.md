@@ -41,6 +41,14 @@ BEATREEL sits on your master track and records your beat bit-for-bit. It turns t
 | PULSE | Heart-monitor line that spikes on every kick. |
 | CHORD | The chord playing now (from your .mid or the audio), plus the last few chords. |
 
+**Beat zoom:** the cards and background bump on the beat. In STYLE → BEAT ZOOM, choose what triggers it:
+- auto-detected kicks
+- every beat, every 2 beats, every bar or every half beat
+- a custom 16-step pattern you click in (START FROM THE DETECTED KICKS gives you a starting point)
+- off
+
+Fix zooms that land early or late with TIMING NUDGE (±250 ms), and set how long each bump lasts with ZOOM LENGTH.
+
 **Rearrange the cards:** drag a card in the preview onto another card to swap their spots. The order is saved with your project and presets, and exports use it. CARDS → RESET CARD ORDER puts them back.
 
 There's also a header (title, BPM, detected key, subtitle), a key strip that lights the current note, a progress bar and a footer. Everything reacts to your kicks, and the amount is adjustable.

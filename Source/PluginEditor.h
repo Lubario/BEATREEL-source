@@ -43,6 +43,7 @@ namespace brl
         bool isIntroPreviewing() const            { return introPreview; }
         double getIntroPreviewTime() const        { return introPreview ? introT : -1.0; }
         bool introLoop = false;
+        double lastPreviewT = 0.0;               // capture time shown in the preview (for live UI bits)
         void showMessage (const String& title, const String& msg);
 
     private:

@@ -27,6 +27,10 @@ namespace brl
 
     enum MidiAlign { midiFromLoopStart, midiFromSongPosition };
 
+    /** What makes the cards / background "zoom". */
+    enum ZoomMode { zoomAuto, zoomEveryBeat, zoomEvery2Beats, zoomEveryBar, zoomEveryHalfBeat, zoomPattern, zoomOff, kNumZoomModes };
+    const char* zoomModeName (int m);
+
     enum IntroType { introNone, introSlam, introTypewriter, introGlitch, introCountdown, introDeal, introIris,
                      introFade, introFadeWhite, introZoomIn, introZoomOut, introSlideUp, introWipe, introSpin, kNumIntros };
     /** Simple intros just animate the reel itself in (no title card). */
@@ -66,6 +70,12 @@ namespace brl
         float  introTransition = 0.5f;       // seconds the intro takes to hand over to the reel
         int    introMode = introOverBeat;
         bool   introSnap = true;
+
+        // --- beat zoom ---
+        int    zoomMode = zoomAuto;
+        uint32 zoomSteps = 0x1111;            // custom pattern: 16 steps per bar, bit i = step i
+        float  zoomNudgeMs = 0.0f;            // + = later, - = earlier
+        float  zoomLength = 0.5f;             // 0 short .. 1 long
 
         String cardOrder;                    // comma-separated card ids, the order you dragged them into
         String cardText = "@yourname\nlink in bio";   // shown on the TEXT card

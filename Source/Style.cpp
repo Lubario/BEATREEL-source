@@ -39,6 +39,12 @@ const char* patternName (int p)
     return n[jlimit (0, (int) kNumPatterns - 1, p)];
 }
 
+const char* zoomModeName (int m)
+{
+    static const char* n[] = { "Auto (detected kicks)", "Every beat", "Every 2 beats", "Every bar", "Every half beat", "Custom pattern", "Off" };
+    return n[jlimit (0, (int) kNumZoomModes - 1, m)];
+}
+
 const char* introName (int i)
 {
     static const char* n[] = { "NONE", "SLAM", "TYPEWRITER", "GLITCH", "COUNTDOWN", "CARD DEAL", "IRIS",
@@ -236,6 +242,8 @@ var Style::toVar() const
     o->setProperty ("title", title); o->setProperty ("subtitle", subtitle);
     o->setProperty ("cards", (int64) cards);
     o->setProperty ("cardOrder", cardOrder);
+    o->setProperty ("zoomMode", zoomMode); o->setProperty ("zoomSteps", (int64) zoomSteps);
+    o->setProperty ("zoomNudgeMs", zoomNudgeMs); o->setProperty ("zoomLength", zoomLength);
     o->setProperty ("cardText", cardText);
     o->setProperty ("showHeader", showHeader); o->setProperty ("showKeys", showKeys);
     o->setProperty ("showProgress", showProgress); o->setProperty ("showFooter", showFooter);
@@ -267,6 +275,10 @@ void Style::fromVar (const var& v)
     title = get ("title", title).toString(); subtitle = get ("subtitle", subtitle).toString();
     cards = (uint32) (int64) get ("cards", (int64) cards);
     cardOrder = get ("cardOrder", cardOrder).toString();
+    zoomMode = jlimit (0, (int) kNumZoomModes - 1, (int) get ("zoomMode", zoomMode));
+    zoomSteps = (uint32) (int64) get ("zoomSteps", (int64) zoomSteps) & 0xffffu;
+    zoomNudgeMs = jlimit (-250.0f, 250.0f, (float) get ("zoomNudgeMs", zoomNudgeMs));
+    zoomLength = jlimit (0.0f, 1.0f, (float) get ("zoomLength", zoomLength));
     cardText = get ("cardText", cardText).toString();
     showHeader = get ("showHeader", showHeader); showKeys = get ("showKeys", showKeys);
     showProgress = get ("showProgress", showProgress); showFooter = get ("showFooter", showFooter);

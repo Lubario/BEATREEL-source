@@ -263,6 +263,81 @@ namespace
         Page& page; String name; Colour Style::* member;
     };
 
+    //--------------------------------------------------------------------------
+    /** 16 steps of one bar: shows when the beat zoom fires, click to edit (switches to a custom pattern). */
+    struct ZoomGrid : public Component, private Timer
+    {
+        explicit ZoomGrid (Page& p) : page (p) { startTimerHz (30); }
+
+        static uint32 impliedSteps (const Style& st, const AnalysisData* d)
+        {
+            switch (st.zoomMode)
+            {
+                case zoomEveryBeat:     return 0x1111u;
+                case zoomEvery2Beats:   return 0x0101u;
+                case zoomEveryBar:      return 0x0001u;
+                case zoomEveryHalfBeat: return 0x5555u;
+                case zoomPattern:       return st.zoomSteps & 0xffffu;
+                case zoomAuto:          return d != nullptr ? patternFromKicks (*d) : 0x1111u;
+                default:                return 0;
+            }
+        }
+        void timerCallback() override { repaint(); }
+        Rectangle<float> cell (int i) const
+        {
+            const float gap = 3.0f, groupGap = 8.0f;
+            const float w = (getWidth() - gap * 12 - groupGap * 3) / 16.0f;
+            const float x = i * (w + gap) + (i / 4) * (groupGap - gap);
+            return { x, 0.0f, w, (float) getHeight() };
+        }
+        void paint (Graphics& g) override
+        {
+            auto& st = page.st();
+            auto d = page.ed.proc.getData();
+            const uint32 steps = impliedSteps (st, d.get());
+            int cur = -1;
+            if (d != nullptr)
+            {
+                const double songBeat = d->info.startPpq + page.ed.lastPreviewT / d->secondsPerBeat();
+                cur = (int) (((int64) std::floor (songBeat / (d->info.beatsPerBar / 16.0)) % 16 + 16) % 16);
+            }
+            const bool editable = st.zoomMode == zoomPattern;
+            const bool off = st.zoomMode == zoomOff;
+            for (int i = 0; i < 16; ++i)
+            {
+                auto r = cell (i);
+                const bool on = ! off && ((steps >> i) & 1u);
+                g.setColour (on ? UiLookAndFeel::accent().withAlpha (editable ? 1.0f : 0.55f)
+                                : UiLookAndFeel::line().withAlpha (i % 4 == 0 ? 1.0f : 0.6f));
+                g.fillRoundedRectangle (r, 3);
+                if (i == cur)
+                {
+                    g.setColour (Colours::white);
+                    g.drawRoundedRectangle (r.reduced (0.5f), 3, 2);
+                }
+            }
+        }
+        void mouseDown (const MouseEvent& e) override
+        {
+            auto& st = page.st();
+            for (int i = 0; i < 16; ++i)
+                if (cell (i).contains (e.position))
+                {
+                    if (st.zoomMode != zoomPattern)
+                    {
+                        auto d = page.ed.proc.getData();
+                        st.zoomSteps = impliedSteps (st, d.get());   // start from what you were seeing
+                        st.zoomMode = zoomPattern;
+                    }
+                    st.zoomSteps ^= 1u << i;
+                    page.ed.styleChanged();
+                    page.refresh();
+                    return;
+                }
+        }
+        Page& page;
+    };
+
     struct StylePage : public Page
     {
         explicit StylePage (BeatReelEditor& e) : Page (e)
@@ -341,6 +416,22 @@ namespace
             addSlider (shadow, 0, 20, &Style::shadow);
             addSlider (alpha, 0.2, 1, &Style::cardAlpha);
             addSlider (react, 0, 1, &Style::react);
+            addSlider (zoomLen, 0, 1, &Style::zoomLength);
+            addAndMakeVisible (zoomNudge);
+            zoomNudge.setRange (-250, 250, 1);
+            zoomNudge.setTextBoxStyle (Slider::TextBoxRight, false, 64, 22);
+            zoomNudge.setTextValueSuffix (" ms");
+            zoomNudge.setDoubleClickReturnValue (true, 0.0);
+            zoomNudge.onValueChange = [this] { st().zoomNudgeMs = (float) zoomNudge.getValue(); ed.styleChanged(); };
+            for (int i = 0; i < kNumZoomModes; ++i) zoomMode.addItem (zoomModeName (i), i + 1);
+            zoomMode.onChange = [this] { st().zoomMode = zoomMode.getSelectedItemIndex(); ed.styleChanged(); refresh(); };
+            addAndMakeVisible (zoomMode);
+            addAndMakeVisible (zoomGrid);
+            addAndMakeVisible (fromKicks);
+            fromKicks.onClick = [this]
+            {
+                if (auto d = ed.proc.getData()) { st().zoomSteps = patternFromKicks (*d); st().zoomMode = zoomPattern; ed.styleChanged(); refresh(); }
+            };
             addSlider (imageDim, 0, 0.9, &Style::bgImageDim);
             glow.onClick = [this] { st().glow = glow.getToggleState(); ed.styleChanged(); };
             for (Component* c : { (Component*) &background, (Component*) &pattern, (Component*) &imageBtn, (Component*) &titleFont,
@@ -388,6 +479,10 @@ namespace
             shadow.setValue (st().shadow, dontSendNotification);
             alpha.setValue (st().cardAlpha, dontSendNotification);
             react.setValue (st().react, dontSendNotification);
+            zoomMode.setSelectedItemIndex (st().zoomMode, dontSendNotification);
+            zoomNudge.setValue (st().zoomNudgeMs, dontSendNotification);
+            zoomLen.setValue (st().zoomLength, dontSendNotification);
+            zoomGrid.repaint();
             imageDim.setValue (st().bgImageDim, dontSendNotification);
             glow.setToggleState (st().glow, dontSendNotification);
         }
@@ -426,7 +521,12 @@ namespace
             row (border, "BORDER", 22);
             row (shadow, "HARD SHADOW", 22);
             row (alpha, "CARD OPACITY", 22);
-            row (react, "BEAT REACTION", 22);
+            row (react, "BEAT ZOOM STRENGTH", 22);
+            row (zoomMode, "ZOOM ON");
+            row (zoomGrid, "ONE BAR - CLICK STEPS FOR A CUSTOM PATTERN", 30);
+            fromKicks.setBounds (4, y - 18, w, 26); y += 32;
+            row (zoomNudge, "TIMING NUDGE (- earlier / + later, double-click resets)", 24);
+            row (zoomLen, "ZOOM LENGTH (short - long)", 22);
             glow.setBounds (4, y - 16, w, 26); y += 20;
             row (footer, "FOOTER TEXT");
             row (cardText, "TEXT CARD (one line each, e.g. @yourname)", 56);
@@ -437,7 +537,10 @@ namespace
         OwnedArray<ColourSwatch> swatches;
         ComboBox background, pattern, titleFont, bodyFont;
         TextButton imageBtn { "CHOOSE IMAGE..." };
-        Slider radius, border, shadow, alpha, react, imageDim;
+        Slider radius, border, shadow, alpha, react, imageDim, zoomLen, zoomNudge;
+        ComboBox zoomMode;
+        ZoomGrid zoomGrid { *this };
+        TextButton fromKicks { "START FROM THE DETECTED KICKS" };
         ToggleButton glow { "GLOW" };
         std::unique_ptr<FileChooser> chooser;
         std::vector<std::pair<int, String>> labels;
@@ -1237,6 +1340,7 @@ void BeatReelEditor::showActivation()
 void BeatReelEditor::timerCallback()
 {
     const double t = proc.getPreviewSeconds();
+    lastPreviewT = t;
     double videoT = t;
     if (auto d0 = proc.getData())
     {
