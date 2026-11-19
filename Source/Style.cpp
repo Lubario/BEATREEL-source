@@ -7,7 +7,8 @@ const char* cardName (int id)
 {
     static const char* n[] = { "COVER", "WAVE", "BEAT", "MIDI", "SCOPE", "BASS", "LEVELS",
                                "VECTOR", "RADIAL", "SPECTRUM", "ORBIT", "TRACK", "DOTS",
-                               "PIANO", "TEMPO", "VINYL", "SPECTROGRAM", "STEPS" };
+                               "PIANO", "TEMPO", "VINYL", "SPECTROGRAM", "STEPS",
+                               "EQ", "STEREO", "TEXT", "PULSE", "CHORD" };
     return isPositiveAndBelow (id, (int) kNumCards) ? n[id] : "?";
 }
 bool cardIsWide (int id) { return id == cardBeat || id == cardMidi || id == cardWave || id == cardSpectrogram; }
@@ -129,6 +130,49 @@ Style makeLook (int i)
     return s;
 }
 
+std::vector<int> Style::orderedCards() const
+{
+    std::vector<int> out;
+    std::vector<bool> seen ((size_t) kNumCards, false);
+    for (auto& tok : StringArray::fromTokens (cardOrder, ",", {}))
+    {
+        const int id = tok.trim().getIntValue();
+        if (tok.trim().containsOnly ("0123456789") && isPositiveAndBelow (id, (int) kNumCards) && ! seen[(size_t) id])
+        { out.push_back (id); seen[(size_t) id] = true; }
+    }
+    // default order for anything not placed yet: the big cards first, then the rest
+    for (int id : { cardBeat, cardMidi, cardSpectrogram, cardWave })
+        if (! seen[(size_t) id]) { out.push_back (id); seen[(size_t) id] = true; }
+    for (int id = 0; id < kNumCards; ++id)
+        if (! seen[(size_t) id]) out.push_back (id);
+    return out;
+}
+
+static String joinOrder (const std::vector<int>& v)
+{
+    StringArray a;
+    for (int id : v) a.add (String (id));
+    return a.joinIntoString (",");
+}
+
+void Style::swapCards (int a, int b)
+{
+    auto v = orderedCards();
+    auto ia = std::find (v.begin(), v.end(), a), ib = std::find (v.begin(), v.end(), b);
+    if (ia == v.end() || ib == v.end() || a == b) return;
+    std::iter_swap (ia, ib);
+    cardOrder = joinOrder (v);
+}
+
+void Style::moveCard (int id, int beforeId)
+{
+    auto v = orderedCards();
+    v.erase (std::remove (v.begin(), v.end(), id), v.end());
+    auto it = std::find (v.begin(), v.end(), beforeId);
+    v.insert (it, id);
+    cardOrder = joinOrder (v);
+}
+
 void Style::copyLookFrom (const Style& o)
 {
     lookName = o.lookName;
@@ -191,6 +235,8 @@ var Style::toVar() const
     o->setProperty ("bgImagePath", bgImagePath); o->setProperty ("bgImageDim", bgImageDim);
     o->setProperty ("title", title); o->setProperty ("subtitle", subtitle);
     o->setProperty ("cards", (int64) cards);
+    o->setProperty ("cardOrder", cardOrder);
+    o->setProperty ("cardText", cardText);
     o->setProperty ("showHeader", showHeader); o->setProperty ("showKeys", showKeys);
     o->setProperty ("showProgress", showProgress); o->setProperty ("showFooter", showFooter);
     o->setProperty ("footerText", footerText);
@@ -220,6 +266,8 @@ void Style::fromVar (const var& v)
     bgImagePath = get ("bgImagePath", bgImagePath).toString(); bgImageDim = get ("bgImageDim", bgImageDim);
     title = get ("title", title).toString(); subtitle = get ("subtitle", subtitle).toString();
     cards = (uint32) (int64) get ("cards", (int64) cards);
+    cardOrder = get ("cardOrder", cardOrder).toString();
+    cardText = get ("cardText", cardText).toString();
     showHeader = get ("showHeader", showHeader); showKeys = get ("showKeys", showKeys);
     showProgress = get ("showProgress", showProgress); showFooter = get ("showFooter", showFooter);
     footerText = get ("footerText", footerText).toString();

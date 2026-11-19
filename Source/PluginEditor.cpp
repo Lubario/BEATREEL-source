@@ -182,6 +182,8 @@ namespace
                 ed.proc.settings().setValue ("maxBars", ed.proc.maxBars);
             };
             for (auto* c : { &midiAlign, &fps, &audio, &bars }) addAndMakeVisible (c);
+            addAndMakeVisible (resetOrder);
+            resetOrder.onClick = [this] { st().cardOrder = {}; ed.styleChanged(); };
         }
         void refresh() override
         {
@@ -194,12 +196,15 @@ namespace
             const int m = ed.proc.maxBars;
             bars.setSelectedItemIndex (m == 4 ? 1 : m == 8 ? 2 : m == 16 ? 3 : m == 32 ? 4 : 0, dontSendNotification);
         }
-        int contentHeight() const override { return 30 + ((kNumCards + 1) / 2) * 28 + 40 + 2 * 28 + 40 + 4 * 34; }
+        int contentHeight() const override { return 30 + ((kNumCards + 1) / 2) * 28 + 40 + 2 * 28 + 40 + 4 * 34 + 80; }
         void paint (Graphics& g) override
         {
             heading (g, { 4, 0, getWidth(), 24 }, "CARDS ON THE VIDEO");
             heading (g, { 4, partsY - 30, getWidth(), 24 }, "LAYOUT");
             heading (g, { 4, optsY - 30, getWidth(), 24 }, "OPTIONS");
+            g.setColour (UiLookAndFeel::accent());
+            g.setFont (UiLookAndFeel::ui (14));
+            g.drawText ("TIP: drag cards in the preview to swap their spots", Rectangle<int> (4, hintY, getWidth() - 8, 24), Justification::centredLeft, true);
         }
         void resized() override
         {
@@ -211,10 +216,13 @@ namespace
             optsY = partsY + 2 * 28 + 40;
             int oy = optsY;
             for (auto* c : { &bars, &midiAlign, &fps, &audio }) { c->setBounds (4, oy, getWidth() - 8, 28); oy += 34; }
+            hintY = oy + 6;
+            resetOrder.setBounds (4, oy + 34, getWidth() - 8, 28);
         }
         OwnedArray<ToggleButton> cardToggles, partToggles;
         ComboBox midiAlign, fps, audio, bars;
-        int partsY = 0, optsY = 0;
+        TextButton resetOrder { "RESET CARD ORDER" };
+        int partsY = 0, optsY = 0, hintY = 0;
     };
 
     //--------------------------------------------------------------------------
@@ -268,6 +276,9 @@ namespace
             addText (title, &Style::title);
             addText (subtitle, &Style::subtitle);
             addText (footer, &Style::footerText);
+            addText (cardText, &Style::cardText);
+            cardText.setMultiLine (true, false);
+            cardText.setReturnKeyStartsNewLine (true);
             title.setInputRestrictions (40);
 
             const std::pair<const char*, Colour Style::*> cols[] = {
@@ -354,6 +365,7 @@ namespace
             if (! title.hasKeyboardFocus (true)) title.setText (st().title, false);
             if (! subtitle.hasKeyboardFocus (true)) subtitle.setText (st().subtitle, false);
             if (! footer.hasKeyboardFocus (true)) footer.setText (st().footerText, false);
+            if (! cardText.hasKeyboardFocus (true)) cardText.setText (st().cardText, false);
             for (auto* s : swatches) s->repaint();
             background.setSelectedItemIndex (st().background, dontSendNotification);
             pattern.setSelectedItemIndex (st().pattern, dontSendNotification);
@@ -417,10 +429,11 @@ namespace
             row (react, "BEAT REACTION", 22);
             glow.setBounds (4, y - 16, w, 26); y += 20;
             row (footer, "FOOTER TEXT");
+            row (cardText, "TEXT CARD (one line each, e.g. @yourname)", 56);
             totalH = y;
         }
 
-        TextEditor title, subtitle, footer;
+        TextEditor title, subtitle, footer, cardText;
         OwnedArray<ColourSwatch> swatches;
         ComboBox background, pattern, titleFont, bodyFont;
         TextButton imageBtn { "CHOOSE IMAGE..." };
@@ -901,7 +914,109 @@ public:
             g.drawText (P.exporter.getStatus() + "   (click to cancel)", r.removeFromTop (34), Justification::centred, false);
         }
     }
-    void mouseUp (const MouseEvent&) override { if (ed.proc.exporter.isBusy()) ed.proc.exporter.cancel(); }
+    //==========================================================================
+    // Drag a card onto another card to swap their places.
+    Point<int> exportSize() const { return aspectSize (ed.proc.style.aspect); }
+    float toScreenScale() const   { return frameBounds.getWidth() / (float) exportSize().x; }
+    Point<float> toExport (Point<float> p) const
+    {
+        return (p - frameBounds.getPosition().toFloat()) / toScreenScale();
+    }
+    Rectangle<float> toScreen (Rectangle<float> r) const
+    {
+        const float k = toScreenScale();
+        return Rectangle<float> (r.getX() * k, r.getY() * k, r.getWidth() * k, r.getHeight() * k) + frameBounds.getPosition().toFloat();
+    }
+    FrameLayout layout() const    { return computeLayout (ed.proc.style, exportSize().x, exportSize().y); }
+    Rectangle<float> rectOf (const FrameLayout& L, int id) const
+    {
+        for (auto& [cid, r] : L.cards) if (cid == id) return toScreen (r);
+        return {};
+    }
+    bool canDrag() const { return hasFrame && ! ed.proc.exporter.isBusy() && ed.proc.getRecState() == BeatReelProcessor::recIdle; }
+
+    void mouseMove (const MouseEvent& e) override
+    {
+        const int id = canDrag() ? layout().cardAt (toExport (e.position)) : -1;
+        if (id != hoverId) { hoverId = id; repaint(); }
+        setMouseCursor (id >= 0 ? MouseCursor::DraggingHandCursor : MouseCursor::NormalCursor);
+    }
+    void mouseExit (const MouseEvent&) override { hoverId = -1; repaint(); }
+    void mouseDown (const MouseEvent& e) override
+    {
+        if (ed.proc.exporter.isBusy()) { ed.proc.exporter.cancel(); return; }
+        dragId = canDrag() ? layout().cardAt (toExport (e.position)) : -1;
+        targetId = -1;
+        dragPos = e.position;
+    }
+    void mouseDrag (const MouseEvent& e) override
+    {
+        if (dragId < 0) return;
+        dragPos = e.position;
+        const int over = layout().cardAt (toExport (e.position));
+        targetId = over != dragId ? over : -1;
+        repaint();
+    }
+    void mouseUp (const MouseEvent&) override
+    {
+        if (dragId >= 0 && targetId >= 0)
+        {
+            ed.proc.style.swapCards (dragId, targetId);
+            ed.styleChanged();
+        }
+        dragId = targetId = -1;
+        repaint();
+    }
+
+    void paintOverChildren (Graphics& g) override
+    {
+        if (! hasFrame) return;
+        const auto L = layout();
+        if (dragId < 0 && hoverId >= 0)
+        {
+            auto r = rectOf (L, hoverId);
+            g.setColour (Colours::white.withAlpha (0.85f));
+            Path outline; outline.addRoundedRectangle (r.reduced (1), 4.0f);
+            const float dashes[] = { 6.0f, 4.0f };
+            PathStrokeType (2.0f).createDashedStroke (outline, outline, dashes, 2);
+            g.fillPath (outline);
+            auto tag = Rectangle<float> (0, 0, 110, 22).withCentre (r.getCentre());
+            g.setColour (Colours::black.withAlpha (0.75f));
+            g.fillRoundedRectangle (tag, 4);
+            g.setColour (Colours::white);
+            g.setFont (UiLookAndFeel::ui (13));
+            g.drawText ("DRAG TO MOVE", tag, Justification::centred, false);
+        }
+        if (dragId >= 0)
+        {
+            auto src = rectOf (L, dragId);
+            g.setColour (Colours::black.withAlpha (0.45f));
+            g.fillRoundedRectangle (src, 4);
+            if (targetId >= 0)
+            {
+                auto dst = rectOf (L, targetId);
+                g.setColour (UiLookAndFeel::accent().withAlpha (0.25f));
+                g.fillRoundedRectangle (dst, 4);
+                g.setColour (UiLookAndFeel::accent());
+                g.drawRoundedRectangle (dst.reduced (1), 4, 3);
+                g.setColour (Colours::white);
+                g.setFont (UiLookAndFeel::ui (14, true));
+                g.drawText ("SWAP", dst, Justification::centred, false);
+            }
+            // ghost of the dragged card under the mouse
+            auto ghost = src.withSizeKeepingCentre (jmin (src.getWidth(), 150.0f), jmin (src.getHeight(), 70.0f)).withCentre (dragPos);
+            g.setColour (UiLookAndFeel::panel().withAlpha (0.92f));
+            g.fillRoundedRectangle (ghost, 6);
+            g.setColour (UiLookAndFeel::accent());
+            g.drawRoundedRectangle (ghost, 6, 2);
+            g.setColour (UiLookAndFeel::text());
+            g.setFont (UiLookAndFeel::ui (16, true));
+            g.drawText (cardName (dragId), ghost, Justification::centred, false);
+        }
+    }
+
+    int hoverId = -1, dragId = -1, targetId = -1;
+    Point<float> dragPos;
 
     BeatReelEditor& ed;
     Image frame;

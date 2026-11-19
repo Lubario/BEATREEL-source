@@ -13,7 +13,7 @@ BEATREEL sits on your master track and records your beat bit-for-bit. It turns t
 - **Works offline** once activated (signed license keys, verified locally).
 - Windows 10/11 (VST3), macOS 11+ Apple silicon & Intel (VST3 + AU), plus a standalone app.
 
-## The 18 cards
+## The 23 cards
 
 | Card | Shows |
 |---|---|
@@ -35,6 +35,13 @@ BEATREEL sits on your master track and records your beat bit-for-bit. It turns t
 | VINYL | Spinning record with your title on the label, bumping on kicks. |
 | SPECTROGRAM | Scrolling heat map of the last 4 seconds of frequencies. |
 | STEPS | 16-step grid of the current bar: kicks, hits, highs and lows light up as they play. |
+| EQ | Smooth analyser curve from 30 Hz to 16 kHz. |
+| STEREO | Stereo width %, phase correlation and L/R balance meters. |
+| TEXT | Your own words (one per line), e.g. `@yourname` / `link in bio`. Edit it in STYLE. |
+| PULSE | Heart-monitor line that spikes on every kick. |
+| CHORD | The chord playing now (from your .mid or the audio), plus the last few chords. |
+
+**Rearrange the cards:** drag a card in the preview onto another card to swap their spots. The order is saved with your project and presets, and exports use it. CARDS → RESET CARD ORDER puts them back.
 
 There's also a header (title, BPM, detected key, subtitle), a key strip that lights the current note, a progress bar and a footer. Everything reacts to your kicks, and the amount is adjustable.
 

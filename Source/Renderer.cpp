@@ -1032,6 +1032,234 @@ struct Frame
         }
     }
 
+    //==========================================================================
+    void cardEqBody (Rectangle<float> r)
+    {
+        const auto& sp = d.spectrum[(size_t) d.frameIndex (t)];
+        // smooth curve through the bands, light temporal smoothing via the previous frames
+        std::array<float, AnalysisData::kBands> v {};
+        for (int k = 0; k < 4; ++k)
+        {
+            const auto& f = d.spectrum[(size_t) d.frameIndex (jmax (0.0, t - k / AnalysisData::kFps))];
+            for (int b = 0; b < AnalysisData::kBands; ++b) v[(size_t) b] += f[(size_t) b] * (k == 0 ? 0.55f : 0.15f);
+        }
+        juce::ignoreUnused (sp);
+        auto plot = r.withTrimmedBottom (18 * s);
+        auto pt = [&] (int b) { return Point<float> (plot.getX() + plot.getWidth() * b / (AnalysisData::kBands - 1.0f),
+                                                     plot.getBottom() - jlimit (0.0f, 1.0f, v[(size_t) b]) * plot.getHeight()); };
+        Path line;
+        line.startNewSubPath (pt (0));
+        for (int b = 1; b < AnalysisData::kBands; ++b)
+        {
+            auto a = pt (b - 1), c = pt (b);
+            line.quadraticTo (a, (a + c) * 0.5f);
+        }
+        line.lineTo (pt (AnalysisData::kBands - 1));
+        Path fill (line);
+        fill.lineTo (plot.getBottomRight());
+        fill.lineTo (plot.getBottomLeft());
+        fill.closeSubPath();
+        g.setGradientFill (ColourGradient (st.accent.withAlpha (0.55f), 0, plot.getY(), st.accent.withAlpha (0.05f), 0, plot.getBottom(), false));
+        g.fillPath (fill);
+        g.setColour (st.accent);
+        g.strokePath (line, PathStrokeType (3 * s, PathStrokeType::curved, PathStrokeType::rounded));
+        // grid + labels at 100 Hz, 1 kHz, 10 kHz
+        g.setFont (body (13));
+        for (auto [hz, txt] : { std::pair<double, const char*> { 100.0, "100" }, { 1000.0, "1k" }, { 10000.0, "10k" } })
+        {
+            const float x = plot.getX() + plot.getWidth() * (float) (std::log (hz / 30.0) / std::log (16000.0 / 30.0));
+            g.setColour (st.dim.withAlpha (0.3f));
+            g.fillRect (x, plot.getY(), jmax (1.0f, s), plot.getHeight());
+            g.setColour (st.dim);
+            g.drawText (txt, Rectangle<float> (x - 20 * s, plot.getBottom() + 2 * s, 40 * s, 16 * s), Justification::centred, false);
+        }
+    }
+
+    void cardStereoBody (Rectangle<float> r)
+    {
+        const int64 total = d.audio.getNumSamples();
+        const int64 end = jlimit ((int64) 0, total, d.sampleIndex (t));
+        const int64 start = jmax ((int64) 0, end - (int64) (0.08 * d.info.sampleRate));
+        auto* L = d.audio.getReadPointer (0);
+        auto* R = d.audio.getReadPointer (jmin (1, d.audio.getNumChannels() - 1));
+        double lr = 0, ll = 0, rr = 0, mid = 0, side = 0;
+        for (int64 i = start; i < end; ++i)
+        {
+            lr += (double) L[i] * R[i]; ll += (double) L[i] * L[i]; rr += (double) R[i] * R[i];
+            const double m = 0.5 * (L[i] + R[i]), sd = 0.5 * (L[i] - R[i]);
+            mid += m * m; side += sd * sd;
+        }
+        const float corr = ll > 1e-12 && rr > 1e-12 ? (float) (lr / std::sqrt (ll * rr)) : 1.0f;
+        const float width = mid > 1e-12 ? jlimit (0.0f, 1.0f, (float) std::sqrt (side / mid)) : (side > 1e-12 ? 1.0f : 0.0f);   // side/mid level: 0 mono .. 1 very wide
+        const float bal = ll + rr > 1e-12 ? (float) ((std::sqrt (rr) - std::sqrt (ll)) / (std::sqrt (rr) + std::sqrt (ll))) : 0.0f;
+
+        auto top = r.removeFromTop (r.getHeight() * 0.42f);
+        {
+            const String txt = String (roundToInt (width * 100)) + "%";
+            auto box = top.removeFromLeft (top.getWidth() * 0.62f);
+            auto f = title (jmin (box.getHeight() * 0.75f, 160 * s) / s);
+            const float tw = GlyphArrangement::getStringWidth (f, txt);
+            if (tw > box.getWidth() * 0.95f) f = f.withHeight (f.getHeight() * box.getWidth() * 0.95f / tw);
+            g.setColour (st.text);
+            g.setFont (f);
+            g.drawText (txt, box, Justification::centredLeft, false);
+        }
+        g.setColour (st.dim);
+        g.setFont (body (14));
+        g.drawText ("WIDTH", top, Justification::centredLeft, false);
+
+        auto meter = [&] (Rectangle<float> m, float value, const char* lo, const char* mid0, const char* hi, Colour c)
+        {
+            auto lab = m.removeFromBottom (16 * s);
+            auto bar = m.withSizeKeepingCentre (m.getWidth(), jmin (m.getHeight(), 14 * s));
+            g.setColour (st.dim.withAlpha (0.2f));
+            g.fillRoundedRectangle (bar, bar.getHeight() * 0.5f);
+            const float cx = bar.getCentreX(), x = cx + value * bar.getWidth() * 0.5f;
+            g.setColour (c.withAlpha (0.6f));
+            g.fillRect (Rectangle<float> (jmin (cx, x), bar.getY(), std::abs (x - cx), bar.getHeight()));
+            g.setColour (c);
+            g.fillEllipse (Rectangle<float> (bar.getHeight() * 1.4f, bar.getHeight() * 1.4f).withCentre ({ x, bar.getCentreY() }));
+            g.setColour (st.dim);
+            g.setFont (body (12));
+            g.drawText (lo, lab, Justification::centredLeft, false);
+            g.drawText (mid0, lab, Justification::centred, false);
+            g.drawText (hi, lab, Justification::centredRight, false);
+        };
+        meter (r.removeFromTop (r.getHeight() * 0.5f), jlimit (-1.0f, 1.0f, corr), "-1", "PHASE", "+1", corr < 0 ? st.accent2 : st.accent);
+        meter (r, jlimit (-1.0f, 1.0f, bal), "L", "BALANCE", "R", st.accent);
+    }
+
+    void cardTextBody (Rectangle<float> r)
+    {
+        auto lines = StringArray::fromLines (st.cardText.isEmpty() ? String ("@yourname") : st.cardText);
+        lines.removeEmptyStrings();
+        if (lines.isEmpty()) return;
+        const float bump = 1.0f + 0.05f * kick * react;
+        const float lh = r.getHeight() / (float) lines.size();
+        for (int i = 0; i < lines.size(); ++i)
+        {
+            auto box = Rectangle<float> (r.getX(), r.getY() + i * lh, r.getWidth(), lh);
+            auto f = title (lh * (i == 0 ? 0.62f : 0.42f) / s);
+            const float tw = GlyphArrangement::getStringWidth (f, lines[i]);
+            if (tw > box.getWidth()) f = f.withHeight (f.getHeight() * box.getWidth() / tw);
+            Graphics::ScopedSaveState ss (g);
+            if (i == 0) g.addTransform (AffineTransform::scale (bump, bump, box.getCentreX(), box.getCentreY()));
+            g.setFont (f);
+            g.setColour (i == 0 ? st.accent : st.text);
+            g.drawText (lines[i], box, Justification::centred, false);
+        }
+    }
+
+    void cardPulseBody (Rectangle<float> r)
+    {
+        auto head = r.removeFromTop (24 * s);
+        g.setColour (st.accent);
+        g.setFont (body (17));
+        g.drawText (String::fromUTF8 ("\xe2\x99\xa5  ") + String (roundToInt (d.info.bpm)) + " BPM", head, Justification::centredLeft, false);
+
+        const double win = 2.5;
+        const int pts = jmax (20, (int) (r.getWidth() / (2.0f * s)));
+        auto beatShape = [] (double dt)   // ECG-like spike, dt seconds after the event
+        {
+            if (dt < 0 || dt > 0.25) return 0.0f;
+            if (dt < 0.02) return (float) (-0.25 * dt / 0.02);
+            if (dt < 0.05) return (float) (-0.25 + 1.25 * (dt - 0.02) / 0.03);
+            if (dt < 0.08) return (float) (1.0 - 1.4 * (dt - 0.05) / 0.03);
+            if (dt < 0.11) return (float) (-0.4 + 0.4 * (dt - 0.08) / 0.03);
+            return (float) (0.15 * std::sin ((dt - 0.11) / 0.14 * MathConstants<double>::pi));
+        };
+        Path p;
+        Point<float> last;
+        for (int i = 0; i <= pts; ++i)
+        {
+            const double tt = t - win + win * i / pts;
+            float v = 0;
+            const int nk = d.countBefore (d.kicks, tt);
+            if (nk > 0) v += beatShape (tt - d.kicks[(size_t) nk - 1]);
+            const int nh = d.countBefore (d.hits, tt);
+            if (nh > 0) v += 0.3f * beatShape (tt - d.hits[(size_t) nh - 1]);
+            if (tt < 0) v = 0;
+            last = { r.getX() + r.getWidth() * i / pts, r.getCentreY() + r.getHeight() * 0.1f - jlimit (-0.6f, 1.2f, v) * r.getHeight() * 0.38f };
+            if (i == 0) p.startNewSubPath (last); else p.lineTo (last);
+        }
+        g.setColour (st.accent.withAlpha (0.25f));
+        g.strokePath (p, PathStrokeType (8 * s, PathStrokeType::curved, PathStrokeType::rounded));
+        g.setColour (st.accent);
+        g.strokePath (p, PathStrokeType (2.5f * s, PathStrokeType::curved, PathStrokeType::rounded));
+        const float dot = (10 + 8 * kick * react) * s;
+        g.setColour (st.accent2);
+        g.fillEllipse (Rectangle<float> (dot, dot).withCentre (last));
+    }
+
+    /** Best matching triad / seventh for a pitch-class profile. */
+    static String chordName (const std::array<float, 12>& pc)
+    {
+        struct Q { const char* suffix; std::vector<int> iv; };
+        static const Q qualities[] = { { "", { 0, 4, 7 } }, { "min", { 0, 3, 7 } }, { "7", { 0, 4, 7, 10 } }, { "maj7", { 0, 4, 7, 11 } },
+                                       { "min7", { 0, 3, 7, 10 } }, { "dim", { 0, 3, 6 } }, { "sus4", { 0, 5, 7 } } };
+        float total = 0; for (auto v : pc) total += v;
+        if (total < 1e-6f) return "-";
+        float best = -1e9f; String name = "-";
+        for (int root = 0; root < 12; ++root)
+            for (auto& q : qualities)
+            {
+                float in = 0;
+                for (int iv : q.iv) in += pc[(size_t) ((root + iv) % 12)];
+                const float score = in - (total - in) * 0.6f - (float) q.iv.size() * 0.02f * total + pc[(size_t) root] * 0.3f;
+                if (score > best) { best = score; name = String (noteNamesSharp()[root]) + q.suffix; }
+            }
+        return name;
+    }
+
+    std::array<float, 12> pitchProfile (double tt) const
+    {
+        std::array<float, 12> pc {};
+        if (rc.midi != nullptr && ! rc.midi->notes.empty())
+        {
+            // every note sounding in the last two beats, weighted by how long it sounded
+            const double len = rc.midi->lengthQuarters;
+            double q1 = (st.midiAlign == midiFromSongPosition ? d.info.startPpq : 0.0) + tt / d.secondsPerBeat();
+            q1 = std::fmod (jmax (0.0, q1), len);
+            const double q0 = q1 - 2.0;
+            for (auto& nt : rc.midi->notes)
+                for (double shift : { 0.0, -len })     // the window may wrap around the loop start
+                {
+                    const double a = jmax (q0, nt.start + shift), b = jmin (q1, nt.end + shift);
+                    if (b > a) pc[(size_t) (nt.note % 12)] += (float) (b - a) * (0.5f + nt.velocity);
+                }
+            return pc;
+        }
+        // average the audio chroma over the last two beats
+        const double spb = d.secondsPerBeat();
+        for (int k = 0; k < 12; ++k)
+        {
+            const auto& c = d.chroma[(size_t) d.frameIndex (jmax (0.0, tt - spb * k / 6.0))];
+            for (int i = 0; i < 12; ++i) pc[(size_t) i] += c[(size_t) i] * c[(size_t) i];
+        }
+        return pc;
+    }
+
+    void cardChordBody (Rectangle<float> r)
+    {
+        const String now = chordName (pitchProfile (t));
+        auto main = r.removeFromTop (r.getHeight() * 0.62f);
+        auto f = title (jmin (main.getHeight() * 0.8f, 260 * s) / s);
+        const float tw = GlyphArrangement::getStringWidth (f, now);
+        if (tw > main.getWidth() * 0.95f) f = f.withHeight (f.getHeight() * main.getWidth() * 0.95f / tw);
+        g.setFont (f);
+        g.setColour (st.accent);
+        g.drawText (now, main, Justification::centred, false);
+
+        // the last few bars' chords
+        const double bar = d.secondsPerBar();
+        StringArray hist;
+        for (int k = 3; k >= 1; --k)
+            if (t - k * bar * 0.5 >= 0) hist.add (chordName (pitchProfile (t - k * bar * 0.5)));
+        g.setFont (body (16));
+        g.setColour (st.dim);
+        g.drawText (hist.joinIntoString ("  >  ") + (hist.isEmpty() ? "" : "  >"), r, Justification::centred, false);
+    }
+
     void drawCard (int id, Rectangle<float> r)
     {
         String right;
@@ -1057,6 +1285,11 @@ struct Frame
             case cardVinyl:  right = "33 RPM"; break;
             case cardSpectrogram: right = "4 S"; break;
             case cardSteps:  right = "16 STEPS"; break;
+            case cardEq:     right = "30 - 16k"; break;
+            case cardStereo: right = "L / R"; break;
+            case cardText:   right = ""; break;
+            case cardPulse:  right = "LIVE"; break;
+            case cardChord:  right = rc.midi != nullptr ? "MIDI" : "AUDIO"; break;
             default: break;
         }
         Dealt dealt (*this, r);
@@ -1083,6 +1316,11 @@ struct Frame
             case cardVinyl:    cardVinylBody (inner); break;
             case cardSpectrogram: cardSpectrogramBody (inner); break;
             case cardSteps:    cardStepsBody (inner); break;
+            case cardEq:       cardEqBody (inner); break;
+            case cardStereo:   cardStereoBody (inner); break;
+            case cardText:     cardTextBody (inner); break;
+            case cardPulse:    cardPulseBody (inner); break;
+            case cardChord:    cardChordBody (inner); break;
             default: break;
         }
     }
@@ -1166,77 +1404,99 @@ struct Frame
     }
 
     //==========================================================================
-    static float cardWeight (int id) { return id == cardMidi ? 1.5f : id == cardBeat ? 1.35f : id == cardWave ? 0.65f : id == cardSpectrogram ? 0.9f : 1.0f; }
-
-    void layoutColumn (Rectangle<float> area, const std::vector<int>& wide, const std::vector<int>& small, int cols, float gap)
-    {
-        struct Row { std::vector<int> ids; float weight; };
-        std::vector<Row> rows;
-        for (int id : wide) rows.push_back ({ { id }, cardWeight (id) });
-        for (size_t i = 0; i < small.size(); i += (size_t) cols)
-        {
-            Row row { {}, 1.0f };
-            for (size_t k = i; k < jmin (small.size(), i + (size_t) cols); ++k) row.ids.push_back (small[k]);
-            rows.push_back (row);
-        }
-        if (rows.empty()) return;
-        float total = 0; for (auto& row : rows) total += row.weight;
-        const float avail = area.getHeight() - gap * (float) (rows.size() - 1);
-        float y = area.getY();
-        for (auto& row : rows)
-        {
-            const float h = avail * row.weight / total;
-            const float cw = (area.getWidth() - gap * (float) (row.ids.size() - 1)) / (float) row.ids.size();
-            for (size_t i = 0; i < row.ids.size(); ++i)
-                drawCard (row.ids[i], { area.getX() + (float) i * (cw + gap), y, cw, h });
-            y += h + gap;
-        }
-    }
-
     void render()
     {
         background();
+        const auto lay = computeLayout (st, W, H);
 
-        const float m = 44 * s, gap = 20 * s;
-        auto area = Rectangle<float> (0, 0, (float) W, (float) H).reduced (m);
-        const bool landscape = W > H;
-
-        if (st.showFooter && st.footerText.isNotEmpty())
+        if (! lay.footer.isEmpty())
         {
-            auto f = area.removeFromBottom (30 * s);
             g.setColour (st.dim);
             g.setFont (body (17));
-            g.drawText (st.footerText, f, Justification::centred, false);
-            area.removeFromBottom (8 * s);
+            g.drawText (st.footerText, lay.footer, Justification::centred, false);
         }
-        std::vector<int> wide, small;
-        for (int id : { cardBeat, cardMidi, cardSpectrogram, cardWave }) if (st.hasCard (id)) wide.push_back (id);
-        for (int id = 0; id < kNumCards; ++id) if (st.hasCard (id) && ! cardIsWide (id)) small.push_back (id);
-        dealCount = (int) (wide.size() + small.size()) + (st.showHeader ? 1 : 0) + (st.showKeys ? 1 : 0) + (st.showProgress ? 1 : 0);
-
-        Rectangle<float> headerR, keysR, progR;
-        if (st.showProgress) { progR = area.removeFromBottom (36 * s); area.removeFromBottom (gap); }
-        if (st.showKeys)     { keysR = area.removeFromBottom (68 * s); area.removeFromBottom (gap); }
-        if (st.showHeader)   { headerR = area.removeFromTop (landscape ? 120 * s : 165 * s); area.removeFromTop (gap); }
-        if (st.showHeader)   { Dealt dl (*this, headerR, true); header (headerR); }
-
-        if (landscape && ! wide.empty() && ! small.empty())
-        {
-            auto left = area.removeFromLeft (area.getWidth() * 0.58f);
-            area.removeFromLeft (gap);
-            layoutColumn (left, wide, {}, 1, gap);
-            layoutColumn (area, {}, small, 2, gap);
-        }
-        else
-        {
-            const int cols = landscape ? 4 : (small.size() <= 4 && st.aspect != aspect9x16 ? 2 : 3);
-            layoutColumn (area, wide, small, small.size() == 4 && ! landscape ? 2 : cols, gap);
-        }
-        if (st.showKeys)     { Dealt dl (*this, keysR); keys (keysR); }
-        if (st.showProgress) { Dealt dl (*this, progR); progress (progR); }
+        dealCount = (int) lay.cards.size() + (st.showHeader ? 1 : 0) + (st.showKeys ? 1 : 0) + (st.showProgress ? 1 : 0);
+        if (st.showHeader)   { Dealt dl (*this, lay.header, true); header (lay.header); }
+        for (auto& [id, r] : lay.cards) drawCard (id, r);
+        if (st.showKeys)     { Dealt dl (*this, lay.keys); keys (lay.keys); }
+        if (st.showProgress) { Dealt dl (*this, lay.progress); progress (lay.progress); }
     }
 };
 } // namespace
+
+//==============================================================================
+FrameLayout computeLayout (const Style& st, int W, int H)
+{
+    FrameLayout L;
+    const float s = (float) jmin (W, H) / 1080.0f;
+    const float m = 44 * s, gap = 20 * s;
+    auto area = Rectangle<float> (0, 0, (float) W, (float) H).reduced (m);
+    const bool landscape = W > H;
+
+    if (st.showFooter && st.footerText.isNotEmpty()) { L.footer = area.removeFromBottom (30 * s); area.removeFromBottom (8 * s); }
+    if (st.showProgress) { L.progress = area.removeFromBottom (36 * s); area.removeFromBottom (gap); }
+    if (st.showKeys)     { L.keys = area.removeFromBottom (68 * s); area.removeFromBottom (gap); }
+    if (st.showHeader)   { L.header = area.removeFromTop (landscape ? 120 * s : 165 * s); area.removeFromTop (gap); }
+
+    std::vector<int> ordered;
+    int nWide = 0, nSmall = 0;
+    for (int id : st.orderedCards())
+        if (st.hasCard (id)) { ordered.push_back (id); (cardIsWide (id) ? nWide : nSmall)++; }
+
+    auto weight = [] (int id) { return id == cardMidi ? 1.5f : id == cardBeat ? 1.35f : id == cardWave ? 0.65f : id == cardSpectrogram ? 0.9f : 1.0f; };
+    using Row = std::vector<int>;
+    auto place = [&] (Rectangle<float> a, const std::vector<Row>& rows)
+    {
+        if (rows.empty()) return;
+        auto rowWeight = [&] (const Row& r) { return r.size() == 1 && cardIsWide (r[0]) ? weight (r[0]) : 1.0f; };
+        float total = 0; for (auto& r : rows) total += rowWeight (r);
+        const float avail = a.getHeight() - gap * (float) (rows.size() - 1);
+        float y = a.getY();
+        for (auto& r : rows)
+        {
+            const float h = avail * rowWeight (r) / total;
+            const float cw = (a.getWidth() - gap * (float) (r.size() - 1)) / (float) r.size();
+            for (size_t i = 0; i < r.size(); ++i)
+                L.cards.push_back ({ r[i], { a.getX() + (float) i * (cw + gap), y, cw, h } });
+            y += h + gap;
+        }
+    };
+    auto pack = [] (const std::vector<int>& ids, int cols)
+    {
+        std::vector<Row> rows;
+        Row cur;
+        for (int id : ids)
+        {
+            if (cardIsWide (id))
+            {
+                if (! cur.empty()) { rows.push_back (cur); cur.clear(); }
+                rows.push_back ({ id });
+                continue;
+            }
+            cur.push_back (id);
+            if ((int) cur.size() == cols) { rows.push_back (cur); cur.clear(); }
+        }
+        if (! cur.empty()) rows.push_back (cur);
+        return rows;
+    };
+
+    if (landscape && nWide > 0 && nSmall > 0)
+    {
+        std::vector<int> wide, small;
+        for (int id : ordered) (cardIsWide (id) ? wide : small).push_back (id);
+        auto left = area.removeFromLeft (area.getWidth() * 0.58f);
+        area.removeFromLeft (gap);
+        place (left, pack (wide, 1));
+        place (area, pack (small, 2));
+    }
+    else
+    {
+        int cols = landscape ? 4 : (nSmall <= 4 && st.aspect != aspect9x16 ? 2 : 3);
+        if (nSmall == 4 && ! landscape) cols = 2;
+        place (area, pack (ordered, cols));
+    }
+    return L;
+}
 
 IntroTiming introTiming (const Style& st, const AnalysisData& d)
 {

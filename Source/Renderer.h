@@ -29,6 +29,19 @@ namespace brl
     /** Length of the exported video, including a lead-in intro. */
     double videoDuration (const Style& s, const AnalysisData& d);
 
+    /** Where everything goes in a w x h frame. Used for drawing and for dragging cards in the editor. */
+    struct FrameLayout
+    {
+        Rectangle<float> header, keys, progress, footer;
+        std::vector<std::pair<int, Rectangle<float>>> cards;    // card id, rectangle (in user order)
+        int cardAt (Point<float> p) const
+        {
+            for (auto& [id, r] : cards) if (r.contains (p)) return id;
+            return -1;
+        }
+    };
+    FrameLayout computeLayout (const Style& st, int w, int h);
+
     /** Draws one video frame into a w x h canvas at the graphics origin. Thread-safe (no shared mutable state). */
     void renderFrame (Graphics& g, int w, int h, const RenderContext& rc);
 

@@ -56,8 +56,10 @@ int main (int argc, char* argv[])
     if (auto v = opt ("--cards"); v.isNotEmpty())
     {
         st.cards = 0;
+        StringArray order;   // the listed order becomes the card order
         for (auto& n : StringArray::fromTokens (v.toUpperCase(), ",", {}))
-            for (int i = 0; i < kNumCards; ++i) if (n.trim() == cardName (i)) st.setCard (i, true);
+            for (int i = 0; i < kNumCards; ++i) if (n.trim() == cardName (i)) { st.setCard (i, true); order.add (String (i)); }
+        st.cardOrder = order.joinIntoString (",");
     }
     if (auto v = opt ("--intro"); v.isNotEmpty()) st.intro = jlimit (0, (int) kNumIntros - 1, v.getIntValue());
     if (auto v = opt ("--intro-len"); v.isNotEmpty()) st.introLength = (float) v.getDoubleValue();

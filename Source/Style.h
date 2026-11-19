@@ -9,6 +9,7 @@ namespace brl
         cardCover, cardWave, cardBeat, cardMidi, cardScope, cardBass, cardLevels,
         cardVector, cardRadial, cardSpectrum, cardOrbit, cardTrack, cardDots,
         cardPiano, cardTempo, cardVinyl, cardSpectrogram, cardSteps,
+        cardEq, cardStereo, cardText, cardPulse, cardChord,
         kNumCards
     };
     const char* cardName (int id);
@@ -66,7 +67,14 @@ namespace brl
         int    introMode = introOverBeat;
         bool   introSnap = true;
 
+        String cardOrder;                    // comma-separated card ids, the order you dragged them into
+        String cardText = "@yourname\nlink in bio";   // shown on the TEXT card
+
         bool hasCard (int id) const        { return (cards >> id) & 1u; }
+        /** Every card id once, in the user's order (new / missing ids appended in default order). */
+        std::vector<int> orderedCards() const;
+        void swapCards (int a, int b);
+        void moveCard (int id, int beforeId);
         void setCard (int id, bool on)     { cards = on ? (cards | (1u << id)) : (cards & ~(1u << id)); }
 
         var  toVar() const;
